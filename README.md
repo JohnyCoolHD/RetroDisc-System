@@ -4,7 +4,7 @@
 
 ### The console-like experience for Windows games on Linux.
 
-**Insert. Launch. Play.**
+**Just Plug'N'Play**
 
 </div>
 
