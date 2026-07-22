@@ -72,13 +72,13 @@ These storage types provide the best experience:
 - NAS storage
 - Blu-ray
 
-# Supported, but performance depends on drive speed and connection
+## Supported, but performance depends on drive speed and connection
 
 These storage types work, but loading times may vary:
 - External HDDs
 - DVD-ROM
 
-# Works, but not recommended
+## Works, but not recommended
 
 CD-ROM is supported, but generally not recommended due to limited read speed.
 
