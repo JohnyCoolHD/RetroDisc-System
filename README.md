@@ -61,18 +61,27 @@ RetroDisc is designed to become a common standard that different applications ca
 
 RetroDisc is storage independent and works on almost any storage medium.
 
-Supported examples include:
+## Recommended
 
-- DVD-ROM *(supported, but not recommended for all games because of its limited read speed)*
-- Blu-ray
+These storage types provide the best experience:
 - ISO images
-- CD-ROM *(supported, but generally not recommended because of its limited read speed)*
 - USB flash drives
-- External HDDs
 - External SSDs
 - Internal drives
 - microSD cards
 - NAS storage
+- Blu-ray
+
+# Supported, but performance depends on drive speed and connection
+
+These storage types work, but loading times may vary:
+- External HDDs
+- DVD-ROM
+
+# Works, but not recommended
+
+CD-ROM is supported, but generally not recommended due to limited read speed.
+
 
 RetroDisc behaves the same regardless of the storage medium.
 
