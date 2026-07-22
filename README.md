@@ -80,10 +80,9 @@ These storage types work, but loading times may vary:
 
 ## Works, but not recommended
 
-CD-ROM is supported, but generally not recommended due to limited read speed.
+- CD-ROM is supported, but generally not recommended due to limited read speed.
 
-
-
+---
 
 RetroDisc behaves the same regardless of the storage medium.
 
