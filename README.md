@@ -2,7 +2,7 @@
 
 # 🎮 RetroDisc
 
-### The console-like experience for Windows games on Linux.
+### Plug 'N' Play for PC Games
 
 ** By JohnyCoolHD **
 
@@ -12,7 +12,7 @@ RetroDisc is an open game media standard for plug-and-play Windows games on Linu
 
 ---
 
-## ✨ What is RetroDisc?
+## ¿What is RetroDisc?
 
 RetroDisc brings back the simplicity of classic game consoles.
 
@@ -97,9 +97,7 @@ A RetroDisc game is a portable game package.
 
 ## 🌐 A Common Standard
 
-RetroDisc is more than a launcher.
-
-It defines a common directory layout that applications can understand.
+RetroDisc defines a common directory layout that applications can understand.
 
 Future integrations could include:
 
