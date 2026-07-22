@@ -37,7 +37,7 @@ The goal of RetroDisc is to make Windows games as portable and easy to use as co
 
 | Feature                    | Description                                    |
 | -------------------------- | ---------------------------------------------- |
-| 🎮 Console-like experience | Plug 'N' Play                                  |
+| 🎮 Console-like experience | Plug 'N' Play for Windows Games on Linux       |
 | 💾 Portable games          | Run games from different storage devices       |
 | 🔒 Game preservation       | Original files remain untouched                |
 | 🐧 Linux gaming            | Built around Wine and Proton                   |
@@ -121,8 +121,7 @@ These provide the best experience:
 
 * ISO images
 * USB flash drives
-* External SSDs
-* Internal drives
+* External/Internal SSDs
 * microSD cards
 * NAS storage
 
@@ -208,8 +207,7 @@ RetroDisc only works on Linux.
 
 ## Required
 
-* Wine
-* wineserver
+* wine
 * fuse-overlayfs
 * fusermount3
 * mountpoint
