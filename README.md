@@ -83,6 +83,8 @@ These storage types work, but loading times may vary:
 CD-ROM is supported, but generally not recommended due to limited read speed.
 
 
+
+
 RetroDisc behaves the same regardless of the storage medium.
 
 A persistent RetroDisc data directory is created inside the user's home directory to store all writable game data.
