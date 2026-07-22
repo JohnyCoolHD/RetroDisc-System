@@ -4,19 +4,9 @@
 
 ### The console-like experience for Windows games on Linux.
 
-**Just Plug'N'Play**
-
 </div>
 
 ---
-
-<div align="center">
-
-![RetroDisc Banner](link)
-
-</div>
-
-# RetroDisc
 
 **RetroDisc is an open directory standard for portable Windows games on Linux.**
 
