@@ -63,7 +63,7 @@ RetroDisc is storage independent and works on almost any storage medium.
 
 Supported examples include:
 
-- DVD-ROM
+- DVD-ROM *(supported, but not recommended for all games because of its limited read speed)*
 - Blu-ray
 - ISO images
 - CD-ROM *(supported, but generally not recommended because of its limited read speed)*
