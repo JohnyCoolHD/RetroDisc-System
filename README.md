@@ -4,7 +4,7 @@
 
 ### The console-like experience for Windows games on Linux.
 
-*** By JohnyCoolHD ***
+** By JohnyCoolHD **
 
 RetroDisc is an open game media standard for plug-and-play Windows games on Linux.
 
