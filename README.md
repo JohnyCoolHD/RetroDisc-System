@@ -143,8 +143,7 @@ RetroDisc only works on Linux.
 
 ## Required
 
-- Wine
-- wineserver
+- wine
 - fuse-overlayfs
 - fusermount3
 - mountpoint
