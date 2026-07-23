@@ -12,7 +12,7 @@ RetroDisc is an open game media standard for plug-and-play Windows games on Linu
 
 ---
 
-## ¿What is RetroDisc?
+# ¿What is RetroDisc?
 
 RetroDisc brings back the simplicity of classic game consoles.
 
