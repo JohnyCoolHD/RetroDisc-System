@@ -46,7 +46,7 @@ The goal of RetroDisc is to make Windows games as portable and easy to use as co
 
 ---
 
-# Why RetroDisc?
+# Why RetroDisc Exists
 
 RetroDisc was created to solve several problems at once.
 
@@ -122,6 +122,7 @@ These provide the best experience:
 * ISO images
 * USB flash drives
 * External/Internal SSDs
+* Internal HDDs
 * microSD cards
 * NAS storage
 
@@ -148,6 +149,32 @@ When launching from read-only media, such as a DVD, RetroDisc automatically copi
 This allows settings to be changed without modifying the original game media.
 
 ---
+
+# 📁 RetroDisc Directory Standard
+
+Every RetroDisc game follows the same standardized directory structure.
+
+A RetroDisc package contains the original game files, launcher and compatibility configuration.  
+Writable game data is stored separately on the user's system, allowing RetroDisc games to also work from read-only media such as discs or ISO images.
+
+Example:
+```
+RetroDisc Game Media
+├── RetroDisc.sh
+├── RetroDisc.conf
+└── Game Files
+
+
+Internal Storage
+└── RetroDisc
+    └── GameData
+        ├── Saves
+        ├── Updates
+        ├── Mods
+        ├── Configuration
+        ├── Wine Prefix
+        └── Registry
+```
 
 # 🗂️ Game Data Separation
 
@@ -177,32 +204,6 @@ The same RetroDisc package can be used:
 * From writable storage for long-term use
 
 ---
-
-# 📁 RetroDisc Directory Standard
-
-Every RetroDisc game follows the same standardized directory structure.
-
-A RetroDisc package contains the original game files, launcher and compatibility configuration.  
-Writable game data is stored separately on the user's system, allowing RetroDisc games to also work from read-only media such as discs or ISO images.
-
-Example:
-```
-RetroDisc Game Media
-├── RetroDisc.sh
-├── RetroDisc.conf
-└── Game Files
-
-
-Internal Storage
-└── RetroDisc
-    └── GameData
-        ├── Saves
-        ├── Updates
-        ├── Mods
-        ├── Configuration
-        ├── Wine Prefix
-        └── Registry
-```
 
 # ⚙️ Requirements
 
