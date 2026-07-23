@@ -180,7 +180,7 @@ RetroDisc separates original game files from user-generated data.
 ```
 Original Game
       │
-      ├──────────────────────────────┐
+      ├────────────────────────────┐
       ▼                              ▼
 
 Original Files                 Game_Name_Data
