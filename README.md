@@ -4,8 +4,6 @@
 
 ### Plug 'N' Play for PC Games
 
-**By JohnyCoolHD**
-
 RetroDisc is an open game media standard for portable Windows games on Linux.
 
 </div>
@@ -124,7 +122,7 @@ RetroDisc is storage independent and works on almost any storage medium.
 
 * CD-ROM
 
-Performance depends entirely on the speed of the storage device.
+Loading times depend entirely on the speed of the storage device. Some games only load small files at a time while other games are loading big files ( It's not always proportional to the game size itself )
 
 ---
 
@@ -183,7 +181,6 @@ RetroDisc separates original game files from user-generated data.
 Original Game
       │
       ├──────────────────────────────┐
-      │                              │
       ▼                              ▼
 
 Original Files                 Game_Name_Data
