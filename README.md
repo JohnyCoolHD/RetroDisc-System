@@ -66,18 +66,9 @@ Just connect the storage device and play.
 
 ## 🔒 Preserve Original Games
 
-The original game files should never be modified.
+Lots of people in the preservation community started to preserve their games by burning the installer onto a disc. Then they put these installers on a shelf and never really use them. 
+Now you can burn the game itself onto a disc and still play these games as if you were playing a PS2 game while creating a physical Game Collection. 
 
-Many Windows games permanently change their installation:
-
-* Updates overwrite files
-* Mods replace assets
-* Save files are stored inside the game directory
-* Configuration files are modified
-* Community patches replace executables
-* Compatibility fixes add additional files
-
-RetroDisc keeps these changes separate.
 
 ---
 
@@ -119,7 +110,6 @@ RetroDisc is storage independent and works on almost any storage medium.
 
 These provide the best experience:
 
-* ISO images
 * USB flash drives
 * External/Internal SSDs
 * Internal HDDs
