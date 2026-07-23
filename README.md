@@ -188,18 +188,24 @@ Writable game data is stored separately on the user's system, allowing RetroDisc
 Example:
 
 RetroDisc Game Media
+│
 ├── RetroDisc.sh
 ├── RetroDisc.conf
+│
 └── Game Files
 
+
 Internal Storage
-└── RetroDisc Data ( Seperated per Game)
-    ├── Saves
-    ├── Updates
-    ├── Mods
-    ├── Configuration
-    ├── Wine Prefix
-    └── Registry
+└── RetroDisc
+    │
+    └── GameData
+        ├── Saves
+        ├── Updates
+        ├── Mods
+        ├── Configuration
+        ├── Wine Prefix
+        └── Registry
+
 
 # ⚙️ Requirements
 
