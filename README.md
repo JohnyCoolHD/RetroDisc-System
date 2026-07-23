@@ -95,7 +95,7 @@ Applications only need to recognize these files to support every RetroDisc game.
 
 `RetroDisc.sh` is responsible for launching the game, while `RetroDisc.conf` provides metadata and runtime configuration such as the game title, executable, compatibility settings and launch options.
 
-Because every RetroDisc title follows the same structure, software can discover and launch RetroDisc games without requiring game-specific support.
+Because every RetroDisc title follows the same structure, software could discover and launch RetroDisc games without requiring game-specific support.
 
 ---
 
@@ -219,8 +219,6 @@ Depending on the individual game:
 * DXVK
 
 Not every RetroDisc title requires every optional component.
-
-The launcher automatically checks which tools are required before starting the game.
 
 ---
 
