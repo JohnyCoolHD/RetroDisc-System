@@ -184,7 +184,7 @@ RetroDisc separates original game files from writable game data.
 Original Game
       │
       ├──────────────────┐
-      │                      │
+      │                     │
       ▼                     ▼
 
 Original Files          RetroDisc Data
