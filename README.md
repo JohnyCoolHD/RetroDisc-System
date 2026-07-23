@@ -185,7 +185,7 @@ Original Game
       │
       ├──────────────────┐
       │                     │
-      ▼                     ▼
+      ▼                    ▼
 
 Original Files          RetroDisc Data
                         ├── Updates
