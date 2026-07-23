@@ -186,7 +186,7 @@ A RetroDisc package contains the original game files, launcher and compatibility
 Writable game data is stored separately on the user's system, allowing RetroDisc games to also work from read-only media such as discs or ISO images.
 
 Example:
-
+```
 RetroDisc Game Media
 │
 ├── RetroDisc.sh
@@ -205,7 +205,7 @@ Internal Storage
         ├── Configuration
         ├── Wine Prefix
         └── Registry
-
+```
 
 # ⚙️ Requirements
 
