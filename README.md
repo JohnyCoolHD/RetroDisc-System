@@ -48,56 +48,35 @@ Instead, it provides a standardized way to package and launch Windows games whil
 
 ---
 
-# Why RetroDisc Exists
+# Goals of RetroDisc
 
-RetroDisc was created to solve several problems at once.
+RetroDisc is built around four simple ideas.
 
----
+## 🎮 Portable Gaming
 
-## 🎮 Console-like Experience
+A RetroDisc game is designed to be played directly from portable storage.
 
-Launching a RetroDisc game should feel similar to using a console game.
+Whether the game is stored on a USB drive, external SSD, DVD or ISO image, the experience remains the same: connect the media, launch the included RetroDisc launcher and play.
 
-Instead of installing a game into the operating system, the included launcher prepares everything automatically.
-
-Depending on the game's configuration, RetroDisc will:
-
-* verify required dependencies
-* create or reuse a compatibility prefix
-* prepare writable game data
-* configure Wine or Proton
-* launch the game
-
-System components such as Wine, Proton or Gamescope only need to be installed once.
-
-The game itself never has to be installed.
+The launcher automatically prepares the required runtime environment before starting the game.
 
 ---
 
-## 🔒 Preserve Original Games
+## 🔒 Game Preservation
 
-Many collectors preserve their PC games by archiving installers onto optical media.
+RetroDisc separates original game files from all writable data.
 
-Unfortunately those installers are rarely used afterwards because reinstalling old Windows games can be inconvenient.
+Save files, configuration, registry changes, compatibility prefixes, updates and mods are stored outside the original release whenever possible.
 
-RetroDisc instead stores the complete playable game on the media.
-
-The original game files remain unchanged while all writable data is stored separately on the user's system.
-
-This makes RetroDisc suitable for both long-term preservation and everyday use.
+This allows the original game to remain preserved while the playable copy continues to evolve over time.
 
 ---
 
 ## 📦 Portable Releases
 
-A RetroDisc release is completely self-contained.
+Every RetroDisc title is self-contained.
 
-The same package can be:
-
-* copied to another drive
-* burned to optical media
-* archived
-* transferred between Linux systems
+The game, launcher and configuration travel together as a single package, making RetroDisc releases easy to archive, copy, move between storage devices or distribute as physical media.
 
 Only the writable game data remains on the local machine.
 
@@ -105,20 +84,20 @@ Only the writable game data remains on the local machine.
 
 ## 🌐 A Common Standard
 
-RetroDisc defines a simple and predictable interface between games and software.
+RetroDisc defines a consistent interface between games and software.
 
-Every RetroDisc title contains two standard files:
+Every RetroDisc title contains two standardized files:
 
-```
+```text
 RetroDisc.sh
 RetroDisc.conf
 ```
 
 Applications only need to recognize these files to support every RetroDisc game.
 
-The launcher (`RetroDisc.sh`) always starts the game, while the configuration (`RetroDisc.conf`) contains information such as the game title, runtime configuration and launch settings.
+`RetroDisc.sh` is responsible for launching the game, while `RetroDisc.conf` provides metadata and runtime configuration such as the game title, executable, compatibility settings and launch options.
 
-Because every RetroDisc title follows the same specification, software does not need game-specific launch logic.
+Because every RetroDisc title follows the same structure, software can discover and launch RetroDisc games without requiring game-specific support.
 
 ---
 
