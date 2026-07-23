@@ -188,16 +188,13 @@ Writable game data is stored separately on the user's system, allowing RetroDisc
 Example:
 ```
 RetroDisc Game Media
-│
 ├── RetroDisc.sh
 ├── RetroDisc.conf
-│
 └── Game Files
 
 
 Internal Storage
 └── RetroDisc
-    │
     └── GameData
         ├── Saves
         ├── Updates
