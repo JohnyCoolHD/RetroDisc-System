@@ -6,43 +6,45 @@
 
 **By JohnyCoolHD**
 
-RetroDisc is an open game media standard for plug-and-play Windows games on Linux.
+RetroDisc is an open game media standard for portable Windows games on Linux.
 
 </div>
 
 ---
 
-# ¿What is RetroDisc?
+# What is RetroDisc?
 
 RetroDisc brings back the simplicity of classic game consoles.
 
 A RetroDisc game behaves like a physical game release:
 
-* 💿 Connect a disc, USB drive, microSD card or other storage device
-* ▶️ Launch the game
-* 🎮 Play without installing the game into the operating system
+* 💿 Connect a disc, USB drive, SSD, HDD, microSD card or other storage device.
+* ▶️ Launch the included RetroDisc launcher.
+* 🎮 Play the game.
 
-Every RetroDisc game contains everything required to run on a compatible Linux system:
+Every RetroDisc release contains everything needed to launch the game on a compatible Linux system:
 
 * Game launcher
 * Compatibility configuration
-* Runtime settings
-* Portable game structure
+* Runtime configuration
+* Original game files
 
-The goal of RetroDisc is to make Windows games as portable and easy to use as console games while preserving the original game files.
+RetroDisc does **not** replace Wine or Proton.
+
+Instead, it provides a standardized way to package and launch Windows games while keeping the original game files preserved.
 
 ---
 
-## 🚀 Features
+# 🚀 Features
 
-| Feature                    | Description                                    |
-| -------------------------- | ---------------------------------------------- |
-| 🎮 Console-like experience | Plug 'N' Play for Windows Games on Linux       |
-| 💾 Portable games          | Run games from different storage devices       |
-| 🔒 Game preservation       | Original files remain untouched                |
-| 🐧 Linux gaming            | Built around Wine and Proton                   |
-| 📂 Standardized structure  | Every game follows the same layout             |
-| 🔧 Separate data storage   | Saves, mods and fixes are stored independently |
+| Feature                     | Description                                            |
+| --------------------------- | ------------------------------------------------------ |
+| 🎮 Plug & Play              | Launch games directly from portable storage            |
+| 💾 Portable Releases        | Games can be moved between drives and systems          |
+| 🔒 Game Preservation        | Original files remain untouched                        |
+| 🐧 Linux Focus              | Built around Wine and Proton                           |
+| 📂 Standard Layout          | Every RetroDisc title follows the same structure       |
+| 🔧 Writable Data Separation | Saves, mods and configuration are stored independently |
 
 ---
 
@@ -52,53 +54,71 @@ RetroDisc was created to solve several problems at once.
 
 ---
 
-## 🎮 Console-like Plug & Play
+## 🎮 Console-like Experience
 
-A RetroDisc game should work like a console game.
+Launching a RetroDisc game should feel similar to using a console game.
 
-No installation wizard.
-No system-wide changes.
-No rebuilding compatibility environments.
+Instead of installing a game into the operating system, the included launcher prepares everything automatically.
 
-Just connect the storage device and play.
+Depending on the game's configuration, RetroDisc will:
+
+* verify required dependencies
+* create or reuse a compatibility prefix
+* prepare writable game data
+* configure Wine or Proton
+* launch the game
+
+System components such as Wine, Proton or Gamescope only need to be installed once.
+
+The game itself never has to be installed.
 
 ---
 
 ## 🔒 Preserve Original Games
 
-Lots of people in the preservation community started to preserve their games by burning the installer onto a disc. Then they put these installers on a shelf and never really use them. 
-Now you can burn the game itself onto a disc and still play these games as if you were playing a PS2 game while creating a physical Game Collection. 
+Many collectors preserve their PC games by archiving installers onto optical media.
 
+Unfortunately those installers are rarely used afterwards because reinstalling old Windows games can be inconvenient.
+
+RetroDisc instead stores the complete playable game on the media.
+
+The original game files remain unchanged while all writable data is stored separately on the user's system.
+
+This makes RetroDisc suitable for both long-term preservation and everyday use.
 
 ---
 
-## 📦 Portable Game Libraries
+## 📦 Portable Releases
 
-Every RetroDisc game follows the same directory structure.
+A RetroDisc release is completely self-contained.
 
-This allows games to move between Linux systems without:
+The same package can be:
 
-* rebuilding Wine prefixes
-* reinstalling dependencies
-* reorganizing files
+* copied to another drive
+* burned to optical media
+* archived
+* transferred between Linux systems
 
-A RetroDisc game is a portable game package.
+Only the writable game data remains on the local machine.
 
 ---
 
 ## 🌐 A Common Standard
 
-RetroDisc defines a common directory layout that applications can understand.
+RetroDisc defines a simple and predictable interface between games and software.
 
-Future integrations could include:
+Every RetroDisc title contains two standard files:
 
-* Steam library integration
-* Graphical frontends
-* Game library managers
-* Handheld gaming launchers
-* Third-party tools
+```
+RetroDisc.sh
+RetroDisc.conf
+```
 
-Applications only need to understand the RetroDisc standard instead of supporting every game individually.
+Applications only need to recognize these files to support every RetroDisc game.
+
+The launcher (`RetroDisc.sh`) always starts the game, while the configuration (`RetroDisc.conf`) contains information such as the game title, runtime configuration and launch settings.
+
+Because every RetroDisc title follows the same specification, software does not need game-specific launch logic.
 
 ---
 
@@ -108,17 +128,14 @@ RetroDisc is storage independent and works on almost any storage medium.
 
 ## ⭐ Recommended
 
-These provide the best experience:
-
 * USB flash drives
-* External/Internal SSDs
+* Internal SSDs
+* External SSDs
 * Internal HDDs
 * microSD cards
 * NAS storage
 
 ## ✅ Supported
-
-Performance depends on drive speed and connection:
 
 * External HDDs
 * Blu-ray
@@ -126,129 +143,138 @@ Performance depends on drive speed and connection:
 
 ## ⚠️ Supported, but not recommended
 
-CD-ROM works, but is generally not recommended due to limited read speed.
+* CD-ROM
+
+Performance depends entirely on the speed of the storage device.
 
 ---
 
-RetroDisc behaves the same regardless of the storage medium.
+A persistent RetroDisc data directory is automatically created inside the user's home directory.
 
-A persistent RetroDisc data directory is created inside the user's home directory to store all writable game data.
+When running from read-only media (for example DVDs or ISO images), RetroDisc automatically stores all writable files outside the original game media.
 
-When launching from read-only media, such as a DVD, RetroDisc automatically copies required configuration files into the data directory.
+This includes:
 
-This allows settings to be changed without modifying the original game media.
+* save games
+* configuration files
+* Wine prefixes
+* registry changes
+* installed mods
+* updates
+
+The original release always remains unchanged.
 
 ---
 
-# 📁 RetroDisc Directory Standard
+# 📁 Directory Layout
 
-Every RetroDisc game follows the same standardized directory structure.
+Every RetroDisc title follows the same basic layout.
 
-A RetroDisc package contains the original game files, launcher and compatibility configuration.  
-Writable game data is stored separately on the user's system, allowing RetroDisc games to also work from read-only media such as discs or ISO images.
-
-Example:
 ```
-RetroDisc Game Media
+RetroDisc Game
 ├── RetroDisc.sh
 ├── RetroDisc.conf
+├── README.txt
 └── Game Files
 
-
-Internal Storage
-└── RetroDisc
-    └── GameData
-        ├── Saves
-        ├── Updates
-        ├── Mods
-        ├── Configuration
-        ├── Wine Prefix
-        └── Registry
 ```
 
-# 🗂️ Game Data Separation
+Writable data is stored separately:
 
-RetroDisc separates original game files from writable game data.
+```
+~/Games/RetroDisc/
+└── Game_Name_Data
+    ├── Saves
+    ├── Mods
+    ├── Updates
+    ├── Configuration
+    ├── Wine Prefix
+    └── Registry
+```
+
+This allows RetroDisc games to work equally well from writable storage, optical media and ISO images.
+
+---
+
+# 🗂️ Writable Game Data
+
+RetroDisc separates original game files from user-generated data.
 
 ```
 Original Game
       │
-      ├──────────────────┐
-      │                     │
-      ▼                    ▼
+      ├──────────────────────────────┐
+      │                              │
+      ▼                              ▼
 
-Original Files          RetroDisc Data
-                        ├── Updates
-                        ├── Mods
-                        ├── Save Data
-                        ├── Wine Prefix
-                        ├── Registry
-                        └── Configuration
+Original Files                 Game_Name_Data
+                               ├── Saves
+                               ├── Mods
+                               ├── Updates
+                               ├── Configuration
+                               ├── Wine Prefix
+                               └── Registry
 ```
 
-The original release stays preserved while the playable version can continue to evolve.
+Whenever possible, all changes are written to the data directory instead of modifying the original release.
 
-The same RetroDisc package can be used:
-
-* From read-only media for preservation
-* From writable storage for long-term use
+This keeps the preserved game untouched while still allowing normal gameplay, configuration changes and mod installation.
 
 ---
 
 # ⚙️ Requirements
 
-RetroDisc only works on Linux.
+RetroDisc requires Linux.
 
-## Required
+## Required Components
 
-* wine
+* Wine
 * fuse-overlayfs
 * fusermount3
 * mountpoint
 
-## Optional
+## Optional Components
 
-Depending on the game configuration:
+Depending on the individual game:
 
 * Proton
 * Gamescope
 * Vulkan drivers
 * DXVK
 
-Not every RetroDisc game requires every component.
+Not every RetroDisc title requires every optional component.
 
-The launcher automatically uses the runtime specified by the game's configuration.
+The launcher automatically checks which tools are required before starting the game.
 
 ---
 
 # 🔧 How RetroDisc Works
 
-Every RetroDisc game contains two important files:
+Every RetroDisc game includes:
 
 ```
 RetroDisc.sh
 RetroDisc.conf
 ```
 
-When launching a game, RetroDisc automatically:
+When a game is launched, RetroDisc automatically:
 
-1. Checks required dependencies
-2. Creates or reuses a dedicated Wine prefix
-3. Prepares persistent game data
-4. Creates a merged runtime using `fuse-overlayfs`
-5. Applies compatibility configuration
-6. Launches the game using Wine or Proton
-7. Cleans up temporary resources after exit
+1. Loads the game configuration.
+2. Verifies required dependencies.
+3. Creates or reuses the compatibility prefix.
+4. Prepares the writable data directory.
+5. Builds a temporary writable runtime using `fuse-overlayfs`.
+6. Applies compatibility settings and registry entries.
+7. Starts the game with Wine or Proton.
+8. Cleans up temporary resources after the game exits.
 
-The original game files are never modified.
-
-Instead, RetroDisc creates a writable runtime around the original installation.
+Throughout the entire process, the original game files remain unchanged.
 
 ---
 
 # 📜 License
 
-RetroDisc is licensed under the GNU General Public License v3.0.
+RetroDisc is licensed under the GNU General Public License v3.0 (GPL-3.0).
 
-Everyone is free to use, study, modify and redistribute the project under the terms of the GPL-3.0 license.
+Everyone is free to use, study, modify and redistribute RetroDisc under the terms of the GPL.
 
