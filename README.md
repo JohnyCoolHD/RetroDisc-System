@@ -122,7 +122,7 @@ RetroDisc is storage independent and works on almost any storage medium.
 
 * CD-ROM
 
-Loading times depend entirely on the speed of the storage device. Some games only load small files at a time while other games are loading big files ( It's not always proportional to the game size itself )
+Loading times depend primarily on the speed of the storage device. The actual impact varies from game to game, as some titles frequently load many small files while others rely on fewer but much larger files. Therefore, loading times are not always directly proportional to the overall game size
 
 ---
 
