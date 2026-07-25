@@ -128,7 +128,7 @@ Loading times depend primarily on the speed of the storage device. The actual im
 
 A persistent RetroDisc data directory is automatically created inside the user's home directory.
 
-When running from read-only media (for example DVDs or ISO images), RetroDisc automatically stores all writable files outside the original game media.
+When running through RetroDisc, RetroDisc automatically stores all writable files outside the original game media.
 
 This includes:
 
