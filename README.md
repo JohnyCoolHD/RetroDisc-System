@@ -200,10 +200,6 @@ This keeps the preserved game untouched while still allowing normal gameplay, co
 
 # ⚙️ Requirements
 
-RetroDisc requires Linux.
-
-## Required Components
-
 * Wine
 * fuse-overlayfs
 * fusermount3
