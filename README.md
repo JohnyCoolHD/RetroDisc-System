@@ -468,7 +468,6 @@ A minimal game configuration can look like:
         "graphics": {
             "renderer": "vulkan",
             "videoMemory": 4096,
-            "fullscreen": true,
             "strictDrawOrdering": false
         },
 
