@@ -224,10 +224,8 @@ create_prefix()
 
     mkdir -p "$PREFIX/drive_c/users"
 
-    rm -rf "$PREFIX/drive_c/users/maxim"
     rm -rf "$PREFIX/drive_c/users/steamuser"
 
-    ln -s RetroDiscUser "$PREFIX/drive_c/users/maxim"
     ln -s RetroDiscUser "$PREFIX/drive_c/users/steamuser"
 
     mkdir -p "$PREFIX/dosdevices"
