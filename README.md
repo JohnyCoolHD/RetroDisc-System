@@ -341,7 +341,6 @@ Depending on the individual game:
 * Proton
 * Vulkan drivers
 * DXVK
-* Gamescope
 * Discord
 
 Not every RetroDisc title requires every optional component.
