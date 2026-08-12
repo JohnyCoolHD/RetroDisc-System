@@ -22,7 +22,6 @@ namespace
     ================================================================
 */
 
-
 constexpr const char* DISCORD_APPLICATION_ID =
     "1536835815546822716";
 
@@ -31,12 +30,7 @@ constexpr const char* DISCORD_APPLICATION_ID =
     ================================================================
     LINUX PROCESS NAME
     ================================================================
-
-    Linux limits the process name to 15 visible characters.
-
-    The actual game name comes from manifest.json.
 */
-
 
 void setProcessName(
     const std::string& gameName
@@ -49,9 +43,7 @@ void setProcessName(
         );
 
 
-    if(
-        processName.empty()
-    )
+    if(processName.empty())
     {
         processName =
             "RetroDisc";
@@ -85,7 +77,6 @@ int main(
         ============================================================
     */
 
-
     DiscordPresence discord;
 
 
@@ -94,7 +85,6 @@ int main(
         VALIDATE ARGUMENTS
         ============================================================
     */
-
 
     if(
         argc < 1 ||
@@ -106,7 +96,6 @@ int main(
             << "Could not determine RetroDisc executable path."
             << std::endl;
 
-
         return 1;
     }
 
@@ -116,7 +105,6 @@ int main(
         DETERMINE RETRODISC ROOT
         ============================================================
     */
-
 
     try
     {
@@ -158,7 +146,6 @@ int main(
         ============================================================
     */
 
-
     if(
         !std::filesystem::is_directory(
             ctx.root /
@@ -174,7 +161,6 @@ int main(
                "gamedata"
             << std::endl;
 
-
         return 1;
     }
 
@@ -184,7 +170,6 @@ int main(
         MANIFEST
         ============================================================
     */
-
 
     if(
         !loadManifest(
@@ -196,7 +181,6 @@ int main(
             << "Failed to load manifest."
             << std::endl;
 
-
         return 1;
     }
 
@@ -205,12 +189,7 @@ int main(
         ============================================================
         PROCESS NAME
         ============================================================
-
-        The game name comes from manifest.json.
-
-        Nothing is hardcoded here.
     */
-
 
     setProcessName(
         ctx.gameName
@@ -221,8 +200,16 @@ int main(
         ============================================================
         CONFIG
         ============================================================
-    */
 
+        loadConfig() automatically creates:
+
+            ~/.config/RetroDisc/games/<gameId>/config.json
+
+        when it does not exist.
+
+        The embedded runtime configuration is selected using
+        ctx.runtime, which came from manifest.json.
+    */
 
     if(
         !loadConfig(
@@ -234,7 +221,6 @@ int main(
             << "Failed to load config."
             << std::endl;
 
-
         return 1;
     }
 
@@ -244,7 +230,6 @@ int main(
         GAME FILESYSTEM
         ============================================================
     */
-
 
     if(
         !prepareFilesystem(
@@ -256,11 +241,9 @@ int main(
             << "Filesystem preparation failed."
             << std::endl;
 
-
         cleanup(
             ctx
         );
-
 
         return 1;
     }
@@ -272,7 +255,6 @@ int main(
         ============================================================
     */
 
-
     if(
         !preparePrefix(
             ctx
@@ -283,11 +265,9 @@ int main(
             << "Prefix preparation failed."
             << std::endl;
 
-
         cleanup(
             ctx
         );
-
 
         return 1;
     }
@@ -297,13 +277,7 @@ int main(
         ============================================================
         DISCORD RICH PRESENCE
         ============================================================
-
-        Discord is optional.
-
-        If Discord is closed or unavailable,
-        RetroDisc continues normally.
     */
-
 
     if(
         discord.connect(
@@ -324,7 +298,6 @@ int main(
         ============================================================
     */
 
-
     if(
         !launchGame(
             ctx
@@ -335,14 +308,11 @@ int main(
             << "Game launch failed."
             << std::endl;
 
-
         discord.clearActivity();
-
 
         cleanup(
             ctx
         );
-
 
         return 1;
     }
@@ -354,7 +324,6 @@ int main(
         ============================================================
     */
 
-
     discord.clearActivity();
 
 
@@ -363,7 +332,6 @@ int main(
         FINAL CLEANUP
         ============================================================
     */
-
 
     if(
         !cleanup(

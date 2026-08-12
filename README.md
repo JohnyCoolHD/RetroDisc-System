@@ -42,11 +42,12 @@ Instead, RetroDisc provides a standardized way to package and launch Windows gam
 | 🎮 Plug & Play         | Launch games directly from portable storage                                  |
 | 💾 Portable Releases   | Games can be moved between drives and systems                                |
 | 🔒 Game Preservation   | Original game files remain untouched                                         |
+| 🐧 Linux Focus         | Built around Wine and Proton                                                 |
 | 📂 Standard Layout     | Every RetroDisc title follows the same basic structure                       |
 | 💾 Persistent Saves    | Writable game data is stored outside the original release                    |
 | 🔧 Writable Separation | Game modifications and runtime changes are separated from the original files |
 | 🧪 Temporary Runtime   | A temporary writable game filesystem is created during execution             |
-| 📦 Mod Support         | Mods can be installed and used separately from the game installation         |
+| 📦 Bundled Prefix      | A release can include a preconfigured Wine prefix                            |
 
 ---
 
@@ -73,6 +74,18 @@ The original game files are used as the read-only base of a temporary filesystem
 Changes made while the game is running are written to the writable game-data layer instead of directly modifying the original release.
 
 This allows the original release to remain preserved while the user can still use saves, configuration files and other writable data.
+
+---
+
+## 📦 Portable Releases
+
+A RetroDisc title contains the files required to identify and launch the game.
+
+The release can be copied or moved between compatible storage devices without requiring the original game files to be installed into a traditional system-wide location.
+
+Persistent writable data is stored locally on the user's Linux system.
+
+This means that the original game media can remain portable and unchanged while user data follows the local machine.
 
 ---
 
@@ -319,12 +332,16 @@ For Proton games:
 sudo pacman -S --needed steam
 ```
 
+The RetroDisc launcher itself does **not** require CMake, GCC or the `nlohmann-json` development package at runtime.
+
 ### Optional Components
 
 Depending on the individual game:
 
+* Proton
 * Vulkan drivers
 * DXVK
+* Gamescope
 * Discord
 
 Not every RetroDisc title requires every optional component.
@@ -392,6 +409,38 @@ Includes:
 * Temporary runtime user link
 
 Temporary data is removed after the game exits whenever cleanup succeeds.
+
+---
+
+# 🧩 Wine and Proton
+
+RetroDisc supports both Wine and Proton.
+
+## Wine
+
+For:
+
+```json
+{
+    "runtime": "wine"
+}
+```
+
+RetroDisc launches the configured executable using Wine and the persistent game prefix.
+
+## Proton
+
+For:
+
+```json
+{
+    "runtime": "proton"
+}
+```
+
+RetroDisc locates the configured Proton version through the user's Steam installation and uses the same persistent game prefix.
+
+A specific Proton installation can also be selected through the configuration.
 
 ---
 

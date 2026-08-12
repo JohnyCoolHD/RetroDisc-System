@@ -1,0 +1,43 @@
+{
+  "runtime": "wine",
+
+  "launch": {
+    "arguments": []
+  },
+
+  "environment": {},
+
+  "wine": {
+    "windowsVersion": "win11",
+
+    "graphics": {
+      "renderer": "auto",
+      "videoMemory": 0,
+      "strictDrawOrdering": false
+    },
+
+    "sync": {
+      "esync": true,
+      "fsync": true,
+      "ntsync": true
+    },
+
+    "display": {
+      "window": {
+        "decorations": true,
+        "managed": true,
+        "mouseCapture": true
+      },
+      
+      "virtualDesktop": {
+        "enabled": false,
+        "width": 1280,
+        "height": 720
+      },
+
+      "dpi": 96
+    },
+
+    "dllOverrides": {}
+  }
+}

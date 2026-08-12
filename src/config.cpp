@@ -1,5 +1,7 @@
 #include "config.hpp"
 
+#include "runtime_config.hpp"
+
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -10,7 +12,245 @@
 
 #include <nlohmann/json.hpp>
 
+
 using json = nlohmann::json;
+
+
+namespace
+{
+
+
+/*
+    ================================================================
+    HOME
+    ================================================================
+*/
+
+std::filesystem::path getHome()
+{
+    const char* home =
+        std::getenv("HOME");
+
+    if(home == nullptr)
+    {
+        return {};
+    }
+
+    if(*home == '\0')
+    {
+        return {};
+    }
+
+    return std::filesystem::path(home);
+}
+
+
+/*
+    ================================================================
+    CONFIGURATION DIRECTORY
+    ================================================================
+*/
+
+std::filesystem::path getGameConfigDirectory(
+    const Context& ctx
+)
+{
+    const auto home =
+        getHome();
+
+    if(home.empty())
+    {
+        return {};
+    }
+
+    return
+        home /
+        ".config" /
+        "RetroDisc" /
+        "games" /
+        ctx.gameId;
+}
+
+
+/*
+    ================================================================
+    CONFIGURATION PATH
+    ================================================================
+*/
+
+std::filesystem::path getGameConfigPath(
+    const Context& ctx
+)
+{
+    const auto directory =
+        getGameConfigDirectory(ctx);
+
+    if(directory.empty())
+    {
+        return {};
+    }
+
+    return
+        directory /
+        "config.json";
+}
+
+
+/*
+    ================================================================
+    CREATE DEFAULT GAME CONFIG
+    ================================================================
+*/
+
+bool createDefaultGameConfig(
+    const Context& ctx
+)
+{
+    const auto configDirectory =
+        getGameConfigDirectory(ctx);
+
+    const auto configPath =
+        getGameConfigPath(ctx);
+
+    if(
+        configDirectory.empty() ||
+        configPath.empty()
+    )
+    {
+        std::cerr
+            << "Could not determine game config path."
+            << std::endl;
+
+        return false;
+    }
+
+
+    /*
+        ============================================================
+        GET EMBEDDED RUNTIME CONFIG
+        ============================================================
+
+        The runtime name comes directly from manifest.json.
+
+        No runtime filename is hardcoded here.
+    */
+
+    std::string runtimeConfig;
+
+    if(
+        !getEmbeddedRuntimeConfig(
+            ctx.runtime,
+            runtimeConfig
+        )
+    )
+    {
+        std::cerr
+            << "Embedded runtime configuration not found:"
+            << std::endl
+            << "    "
+            << ctx.runtime
+            << std::endl;
+
+        return false;
+    }
+
+
+    /*
+        ============================================================
+        CREATE DIRECTORY
+        ============================================================
+    */
+
+    std::error_code ec;
+
+    std::filesystem::create_directories(
+        configDirectory,
+        ec
+    );
+
+    if(ec)
+    {
+        std::cerr
+            << "Could not create game config directory:"
+            << std::endl
+            << "    "
+            << configDirectory
+            << std::endl
+            << "    "
+            << ec.message()
+            << std::endl;
+
+        return false;
+    }
+
+
+    /*
+        ============================================================
+        WRITE CONFIG
+        ============================================================
+    */
+
+    std::ofstream file(
+        configPath
+    );
+
+    if(!file)
+    {
+        std::cerr
+            << "Could not create config:"
+            << std::endl
+            << "    "
+            << configPath
+            << std::endl;
+
+        return false;
+    }
+
+
+    file
+        << runtimeConfig;
+
+
+    if(!file)
+    {
+        std::cerr
+            << "Could not write config:"
+            << std::endl
+            << "    "
+            << configPath
+            << std::endl;
+
+        return false;
+    }
+
+
+    std::cout
+        << "Created game config:"
+        << std::endl
+        << "    "
+        << configPath
+        << std::endl;
+
+
+    std::cout
+        << "Runtime:"
+        << std::endl
+        << "    "
+        << ctx.runtime
+        << std::endl;
+
+
+    return true;
+}
+
+
+/*
+    ================================================================
+    LOAD MANIFEST
+    ================================================================
+*/
+
+} // namespace
 
 
 bool loadManifest(
@@ -21,9 +261,11 @@ bool loadManifest(
         ctx.root /
         "manifest.json";
 
+
     std::ifstream file(
         path
     );
+
 
     if(!file)
     {
@@ -37,6 +279,7 @@ bool loadManifest(
         return false;
     }
 
+
     try
     {
         json data;
@@ -44,20 +287,36 @@ bool loadManifest(
         file >>
             data;
 
+
+        /*
+            ========================================================
+            GAME
+            ========================================================
+        */
+
         ctx.gameId =
             data.at("game")
                 .at("id")
                 .get<std::string>();
+
 
         ctx.gameName =
             data.at("game")
                 .at("name")
                 .get<std::string>();
 
+
         ctx.executable =
             data.at("game")
                 .at("executable")
                 .get<std::string>();
+
+
+        /*
+            ========================================================
+            RUNTIME
+            ========================================================
+        */
 
         ctx.runtime =
             data.value(
@@ -65,10 +324,52 @@ bool loadManifest(
                 std::string("wine")
             );
 
+
+        if(ctx.gameId.empty())
+        {
+            std::cerr
+                << "Manifest game id is empty."
+                << std::endl;
+
+            return false;
+        }
+
+
+        if(ctx.gameName.empty())
+        {
+            std::cerr
+                << "Manifest game name is empty."
+                << std::endl;
+
+            return false;
+        }
+
+
+        if(ctx.executable.empty())
+        {
+            std::cerr
+                << "Manifest executable is empty."
+                << std::endl;
+
+            return false;
+        }
+
+
+        if(ctx.runtime.empty())
+        {
+            std::cerr
+                << "Manifest runtime is empty."
+                << std::endl;
+
+            return false;
+        }
+
+
         std::cout
             << "Game: "
             << ctx.gameName
             << std::endl;
+
 
         std::cout
             << "Runtime: "
@@ -87,18 +388,26 @@ bool loadManifest(
         return false;
     }
 
+
     return true;
 }
 
+
+/*
+    ================================================================
+    LOAD CONFIG
+    ================================================================
+*/
 
 bool loadConfig(
     Context& ctx
 )
 {
-    const char* home =
-        std::getenv("HOME");
+    const auto home =
+        getHome();
 
-    if(home == nullptr)
+
+    if(home.empty())
     {
         std::cerr
             << "HOME environment variable is not set."
@@ -107,17 +416,72 @@ bool loadConfig(
         return false;
     }
 
+
+    const auto configDirectory =
+        getGameConfigDirectory(ctx);
+
     const auto path =
-        std::filesystem::path(home) /
-        ".config" /
-        "RetroDisc" /
-        "games" /
-        ctx.gameId /
-        "config.json";
+        getGameConfigPath(ctx);
+
+
+    if(
+        configDirectory.empty() ||
+        path.empty()
+    )
+    {
+        std::cerr
+            << "Could not determine config path."
+            << std::endl;
+
+        return false;
+    }
+
+
+    /*
+        ============================================================
+        CREATE CONFIG IF MISSING
+        ============================================================
+    */
+
+    std::error_code ec;
+
+    if(
+        !std::filesystem::is_regular_file(
+            path,
+            ec
+        )
+    )
+    {
+        std::cout
+            << "Game config does not exist."
+            << std::endl;
+
+
+        if(
+            !createDefaultGameConfig(
+                ctx
+            )
+        )
+        {
+            std::cerr
+                << "Failed to create default game config."
+                << std::endl;
+
+            return false;
+        }
+    }
+
+
+    /*
+        ============================================================
+        OPEN CONFIG
+        ============================================================
+    */
 
     std::ifstream file(
         path
     );
+
 
     if(!file)
     {
@@ -131,12 +495,14 @@ bool loadConfig(
         return false;
     }
 
+
     try
     {
         json data;
 
         file >>
             data;
+
 
         /*
             ========================================================
@@ -149,6 +515,7 @@ bool loadConfig(
                 "runtime",
                 ctx.runtime
             );
+
 
         /*
             ========================================================
@@ -164,6 +531,7 @@ bool loadConfig(
             const auto& launch =
                 data["launch"];
 
+
             if(
                 launch.contains("arguments") &&
                 launch["arguments"].is_array()
@@ -176,6 +544,7 @@ bool loadConfig(
                         >();
             }
         }
+
 
         /*
             ========================================================
@@ -198,6 +567,7 @@ bool loadConfig(
                     >();
         }
 
+
         /*
             ========================================================
             PROTON
@@ -212,20 +582,29 @@ bool loadConfig(
             const auto& proton =
                 data["proton"];
 
-            if(proton.contains("version"))
+
+            if(
+                proton.contains("version") &&
+                proton["version"].is_string()
+            )
             {
                 ctx.protonVersion =
                     proton["version"]
                         .get<std::string>();
             }
 
-            if(proton.contains("path"))
+
+            if(
+                proton.contains("path") &&
+                proton["path"].is_string()
+            )
             {
                 ctx.protonPath =
                     proton["path"]
                         .get<std::string>();
             }
         }
+
 
         /*
             ========================================================
@@ -241,10 +620,14 @@ bool loadConfig(
             const auto& wine =
                 data["wine"];
 
+
+            /*
+                WINDOWS VERSION
+            */
+
             if(
-                wine.contains(
-                    "windowsVersion"
-                )
+                wine.contains("windowsVersion") &&
+                wine["windowsVersion"].is_string()
             )
             {
                 ctx.wine.windowsVersion =
@@ -252,8 +635,11 @@ bool loadConfig(
                         .get<std::string>();
             }
 
+
             /*
+                ====================================================
                 GRAPHICS
+                ====================================================
             */
 
             if(
@@ -264,36 +650,44 @@ bool loadConfig(
                 const auto& graphics =
                     wine["graphics"];
 
-                if(graphics.contains(
-                    "renderer"
-                ))
+
+                if(
+                    graphics.contains("renderer") &&
+                    graphics["renderer"].is_string()
+                )
                 {
                     ctx.wine.graphics.renderer =
                         graphics["renderer"]
                             .get<std::string>();
                 }
 
-                if(graphics.contains(
-                    "videoMemory"
-                ))
+
+                if(
+                    graphics.contains("videoMemory") &&
+                    graphics["videoMemory"].is_number_integer()
+                )
                 {
                     ctx.wine.graphics.videoMemory =
                         graphics["videoMemory"]
                             .get<int>();
                 }
 
-                if(graphics.contains(
-                    "fullscreen"
-                ))
+
+                if(
+                    graphics.contains("fullscreen") &&
+                    graphics["fullscreen"].is_boolean()
+                )
                 {
                     ctx.wine.graphics.fullscreen =
                         graphics["fullscreen"]
                             .get<bool>();
                 }
 
-                if(graphics.contains(
-                    "strictDrawOrdering"
-                ))
+
+                if(
+                    graphics.contains("strictDrawOrdering") &&
+                    graphics["strictDrawOrdering"].is_boolean()
+                )
                 {
                     ctx.wine.graphics.strictDrawOrdering =
                         graphics["strictDrawOrdering"]
@@ -301,8 +695,11 @@ bool loadConfig(
                 }
             }
 
+
             /*
+                ====================================================
                 SYNC
+                ====================================================
             */
 
             if(
@@ -313,21 +710,33 @@ bool loadConfig(
                 const auto& sync =
                     wine["sync"];
 
-                if(sync.contains("esync"))
+
+                if(
+                    sync.contains("esync") &&
+                    sync["esync"].is_boolean()
+                )
                 {
                     ctx.wine.sync.esync =
                         sync["esync"]
                             .get<bool>();
                 }
 
-                if(sync.contains("fsync"))
+
+                if(
+                    sync.contains("fsync") &&
+                    sync["fsync"].is_boolean()
+                )
                 {
                     ctx.wine.sync.fsync =
                         sync["fsync"]
                             .get<bool>();
                 }
 
-                if(sync.contains("ntsync"))
+
+                if(
+                    sync.contains("ntsync") &&
+                    sync["ntsync"].is_boolean()
+                )
                 {
                     ctx.wine.sync.ntsync =
                         sync["ntsync"]
@@ -335,8 +744,11 @@ bool loadConfig(
                 }
             }
 
+
             /*
+                ====================================================
                 DISPLAY
+                ====================================================
             */
 
             if(
@@ -346,6 +758,7 @@ bool loadConfig(
             {
                 const auto& display =
                     wine["display"];
+
 
                 /*
                     WINDOW
@@ -359,33 +772,40 @@ bool loadConfig(
                     const auto& window =
                         display["window"];
 
-                    if(window.contains(
-                        "decorations"
-                    ))
+
+                    if(
+                        window.contains("decorations") &&
+                        window["decorations"].is_boolean()
+                    )
                     {
                         ctx.wine.display.window.decorations =
                             window["decorations"]
                                 .get<bool>();
                     }
 
-                    if(window.contains(
-                        "managed"
-                    ))
+
+                    if(
+                        window.contains("managed") &&
+                        window["managed"].is_boolean()
+                    )
                     {
                         ctx.wine.display.window.managed =
                             window["managed"]
                                 .get<bool>();
                     }
 
-                    if(window.contains(
-                        "mouseCapture"
-                    ))
+
+                    if(
+                        window.contains("mouseCapture") &&
+                        window["mouseCapture"].is_boolean()
+                    )
                     {
                         ctx.wine.display.window.mouseCapture =
                             window["mouseCapture"]
                                 .get<bool>();
                     }
                 }
+
 
                 /*
                     SCALING
@@ -399,27 +819,33 @@ bool loadConfig(
                     const auto& scaling =
                         display["scaling"];
 
-                    if(scaling.contains(
-                        "enabled"
-                    ))
+
+                    if(
+                        scaling.contains("enabled") &&
+                        scaling["enabled"].is_boolean()
+                    )
                     {
                         ctx.wine.display.scaling.enabled =
                             scaling["enabled"]
                                 .get<bool>();
                     }
 
-                    if(scaling.contains(
-                        "mode"
-                    ))
+
+                    if(
+                        scaling.contains("mode") &&
+                        scaling["mode"].is_string()
+                    )
                     {
                         ctx.wine.display.scaling.mode =
                             scaling["mode"]
                                 .get<std::string>();
                     }
 
-                    if(scaling.contains(
-                        "filter"
-                    ))
+
+                    if(
+                        scaling.contains("filter") &&
+                        scaling["filter"].is_string()
+                    )
                     {
                         ctx.wine.display.scaling.filter =
                             scaling["filter"]
@@ -427,41 +853,46 @@ bool loadConfig(
                     }
                 }
 
+
                 /*
                     VIRTUAL DESKTOP
                 */
 
                 if(
-                    display.contains(
-                        "virtualDesktop"
-                    ) &&
+                    display.contains("virtualDesktop") &&
                     display["virtualDesktop"].is_object()
                 )
                 {
                     const auto& desktop =
                         display["virtualDesktop"];
 
-                    if(desktop.contains(
-                        "enabled"
-                    ))
+
+                    if(
+                        desktop.contains("enabled") &&
+                        desktop["enabled"].is_boolean()
+                    )
                     {
                         ctx.wine.display.virtualDesktop.enabled =
                             desktop["enabled"]
                                 .get<bool>();
                     }
 
-                    if(desktop.contains(
-                        "width"
-                    ))
+
+                    if(
+                        desktop.contains("width") &&
+                        desktop["width"].is_number_integer()
+                    )
                     {
                         ctx.wine.display.virtualDesktop.width =
                             desktop["width"]
                                 .get<int>();
                     }
 
-                    if(desktop.contains(
-                        "height"
-                    ))
+
+                    if(
+                        desktop.contains("height") &&
+                        desktop["height"].is_number_integer()
+                    )
                     {
                         ctx.wine.display.virtualDesktop.height =
                             desktop["height"]
@@ -469,13 +900,15 @@ bool loadConfig(
                     }
                 }
 
+
                 /*
                     DPI
                 */
 
-                if(display.contains(
-                    "dpi"
-                ))
+                if(
+                    display.contains("dpi") &&
+                    display["dpi"].is_number_integer()
+                )
                 {
                     ctx.wine.display.dpi =
                         display["dpi"]
@@ -483,8 +916,11 @@ bool loadConfig(
                 }
             }
 
+
             /*
+                ====================================================
                 DLL OVERRIDES
+                ====================================================
             */
 
             if(
@@ -515,10 +951,26 @@ bool loadConfig(
         return false;
     }
 
+
+    /*
+        ============================================================
+        OUTPUT
+        ============================================================
+    */
+
+    std::cout
+        << "Loaded config:"
+        << std::endl
+        << "    "
+        << path
+        << std::endl;
+
+
     std::cout
         << "Loaded runtime: "
         << ctx.runtime
         << std::endl;
+
 
     std::cout
         << "Virtual Desktop: "
@@ -528,6 +980,7 @@ bool loadConfig(
                 : "disabled"
         )
         << std::endl;
+
 
     if(
         ctx.wine.display.virtualDesktop.enabled
@@ -540,6 +993,7 @@ bool loadConfig(
             << ctx.wine.display.virtualDesktop.height
             << std::endl;
     }
+
 
     return true;
 }
