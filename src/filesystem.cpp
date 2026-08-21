@@ -12,12 +12,14 @@
 #include <unistd.h>
 
 
-namespace {
+namespace
+{
 
 
 std::string shellQuote(
     const std::string& value
-) {
+)
+{
     std::string result = "'";
 
     for(const char c : value)
@@ -41,7 +43,8 @@ std::string shellQuote(
 bool runCommand(
     const std::string& command,
     bool showCommand = false
-) {
+)
+{
     if(showCommand)
     {
         std::cout
@@ -70,7 +73,8 @@ bool runCommand(
 
 bool unmountPath(
     const std::filesystem::path& path
-) {
+)
+{
     if(path.empty())
     {
         return true;
@@ -135,7 +139,8 @@ bool unmountPath(
 
 bool removeDirectory(
     const std::filesystem::path& path
-) {
+)
+{
     if(path.empty())
     {
         return true;
@@ -177,7 +182,8 @@ bool removeDirectory(
 
 bool isMounted(
     const std::filesystem::path& path
-) {
+)
+{
     if(path.empty())
     {
         return false;
@@ -203,7 +209,8 @@ bool isMounted(
 bool replicateDirectoryStructure(
     const std::filesystem::path& source,
     const std::filesystem::path& destination
-) {
+)
+{
     std::error_code ec;
 
     if(!std::filesystem::exists(
@@ -312,7 +319,8 @@ bool replicateDirectoryStructure(
 
 bool prepareFilesystem(
     Context& ctx
-) {
+)
+{
     if(ctx.executable.empty())
     {
         std::cerr
@@ -427,13 +435,34 @@ bool prepareFilesystem(
         ============================================================
         PERSISTENT GAMEDATA
         ============================================================
+
+        Without --datapath:
+
+            ~/Games/RetroDisc/<gameId>/gamedata
+
+        With --datapath:
+
+            <datapath>/gamedata
     */
 
+    std::filesystem::path persistentGameDirectory;
+
+    if(!ctx.dataPath.empty())
+    {
+        persistentGameDirectory =
+            ctx.dataPath;
+    }
+    else
+    {
+        persistentGameDirectory =
+            std::filesystem::path(home) /
+            "Games" /
+            "RetroDisc" /
+            ctx.gameId;
+    }
+
     ctx.gameOverlayUpperDirectory =
-        std::filesystem::path(home) /
-        "Games" /
-        "RetroDisc" /
-        ctx.gameId /
+        persistentGameDirectory /
         "gamedata";
 
     ctx.gameDataDirectory =
@@ -551,7 +580,8 @@ bool prepareFilesystem(
 
 bool mountOverlay(
     Context& ctx
-) {
+)
+{
     if(ctx.overlayMounted)
     {
         return true;
@@ -699,7 +729,8 @@ bool mountOverlay(
 
 bool cleanupFilesystem(
     Context& ctx
-) {
+)
+{
     bool success =
         true;
 
@@ -796,6 +827,7 @@ bool cleanupFilesystem(
 
 bool cleanup(
     Context& ctx
-) {
+)
+{
     return cleanupFilesystem(ctx);
 }

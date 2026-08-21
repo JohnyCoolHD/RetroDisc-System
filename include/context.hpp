@@ -4,6 +4,7 @@
 #include <map>
 #include <string>
 #include <vector>
+
 #include "discord.hpp"
 
 struct WineGraphics
@@ -68,6 +69,27 @@ struct Context
 {
     std::filesystem::path root;
 
+    /*
+        ============================================================
+        PERSISTENT GAME DATA PATH
+        ============================================================
+
+        Without --datapath:
+
+            ~/Games/RetroDisc/<gameId>/
+
+        With --datapath:
+
+            <datapath>/
+
+        The supplied datapath is already the complete persistent
+        directory for this game.
+
+        The gameId is NOT appended when --datapath is used.
+    */
+
+    std::filesystem::path dataPath;
+
     std::string gameId;
     std::string gameName;
     std::string executable;
@@ -113,7 +135,7 @@ struct Context
             ~/.RetroDisc
 
         prefixOverlayDirectory:
-            ~/Games/RetroDisc/<gameId>/pfx
+            <persistent game directory>/pfx
 
         The name prefixOverlayDirectory is retained here to avoid
         unnecessarily changing the rest of the code/API. It is now

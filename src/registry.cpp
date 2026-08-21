@@ -162,13 +162,6 @@ bool copyPrefixEntry(
             return false;
         }
 
-        /*
-            If something already exists at the destination,
-            remove it before creating the symlink.
-
-            This is safe because the destination prefix is only
-            created when the persistent prefix does not exist.
-        */
         if(
             std::filesystem::exists(
                 destination,
@@ -319,10 +312,6 @@ bool copyPrefixEntry(
 
     if(std::filesystem::is_regular_file(status))
     {
-        /*
-            copy_file() is used instead of copy().
-        */
-
         std::filesystem::copy_file(
             source,
             destination,
@@ -388,13 +377,6 @@ bool copyWinePrefix(
 
         return false;
     }
-
-    /*
-        Destination must not already be a prefix.
-
-        prepareLocalPrefix() only calls us when it does not exist,
-        but we protect against accidental reuse here as well.
-    */
 
     if(
         std::filesystem::exists(
@@ -489,10 +471,6 @@ bool copyWinePrefix(
         }
     }
 
-    /*
-        Verify the resulting prefix before returning.
-    */
-
     if(!prefixLooksValid(
         destination
     ))
@@ -544,12 +522,6 @@ bool prepareGlobalPrefix(
         home /
         ".RetroDisc";
 
-    /*
-        We no longer create or use this directory as a Wine prefix.
-
-        It can still exist from older RetroDisc versions.
-    */
-
     return true;
 }
 
@@ -571,20 +543,43 @@ bool prepareLocalPrefix(
     }
 
     /*
-        Persistent game directory:
+        ============================================================
+        PERSISTENT GAME DIRECTORY
+        ============================================================
+
+        Without --datapath:
 
             ~/Games/RetroDisc/<gameId>/
 
-        Persistent Wine prefix:
+        With --datapath:
 
-            ~/Games/RetroDisc/<gameId>/pfx
+            <datapath>/
+
+        The supplied datapath is already the complete game
+        directory. The gameId is NOT appended.
     */
 
-    const auto localGameDirectory =
-        home /
-        "Games" /
-        "RetroDisc" /
-        ctx.gameId;
+    std::filesystem::path localGameDirectory;
+
+    if(!ctx.dataPath.empty())
+    {
+        localGameDirectory =
+            ctx.dataPath;
+    }
+    else
+    {
+        localGameDirectory =
+            home /
+            "Games" /
+            "RetroDisc" /
+            ctx.gameId;
+    }
+
+    /*
+        Persistent Wine prefix:
+
+            <persistent game directory>/pfx
+    */
 
     const auto localPrefix =
         localGameDirectory /
@@ -617,10 +612,6 @@ bool prepareLocalPrefix(
         ============================================================
         EXISTING COMPLETE PREFIX
         ============================================================
-
-        This is the normal case after the first launch.
-
-        NEVER overwrite it.
     */
 
     if(prefixLooksValid(
@@ -671,15 +662,6 @@ bool prepareLocalPrefix(
         ============================================================
         BUNDLED PREFIX
         ============================================================
-
-        The bundled prefix lives beside RetroDisc:
-
-            ResidentEvil/
-                RetroDisc
-                pfx
-                gamedata
-
-        It is copied ONLY when the persistent game prefix is missing.
     */
 
     const auto bundledPrefix =
@@ -712,10 +694,6 @@ bool prepareLocalPrefix(
 
             return false;
         }
-
-        /*
-            Verify again.
-        */
 
         if(!prefixLooksValid(
             localPrefix
