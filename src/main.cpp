@@ -15,7 +15,6 @@
 namespace
 {
 
-
 /*
     ================================================================
     DISCORD APPLICATION
@@ -42,13 +41,11 @@ void setProcessName(
             15
         );
 
-
     if(processName.empty())
     {
         processName =
             "RetroDisc";
     }
-
 
     prctl(
         PR_SET_NAME,
@@ -59,9 +56,14 @@ void setProcessName(
     );
 }
 
-
 }
 
+
+/*
+    ================================================================
+    MAIN
+    ================================================================
+*/
 
 int main(
     int argc,
@@ -69,13 +71,6 @@ int main(
 )
 {
     Context ctx;
-
-
-    /*
-        ============================================================
-        DISCORD
-        ============================================================
-    */
 
     DiscordPresence discord;
 
@@ -89,7 +84,8 @@ int main(
     if(
         argc < 1 ||
         argv == nullptr ||
-        argv[0] == nullptr
+        argv[0] == nullptr ||
+        *argv[0] == '\0'
     )
     {
         std::cerr
@@ -120,7 +116,6 @@ int main(
             << std::endl
             << e.what()
             << std::endl;
-
 
         try
         {
@@ -200,15 +195,6 @@ int main(
         ============================================================
         CONFIG
         ============================================================
-
-        loadConfig() automatically creates:
-
-            ~/.config/RetroDisc/games/<gameId>/config.json
-
-        when it does not exist.
-
-        The embedded runtime configuration is selected using
-        ctx.runtime, which came from manifest.json.
     */
 
     if(
@@ -285,10 +271,20 @@ int main(
         )
     )
     {
-        discord.setActivity(
-            ctx.gameName,
-            ctx.gameId
-        );
+        /*
+            Discord failure must never prevent the game from
+            launching.
+        */
+
+        if(
+            !discord.setActivity(
+                ctx.gameName,
+                ctx.gameId
+            )
+        )
+        {
+            discord.disconnect();
+        }
     }
 
 
@@ -309,6 +305,7 @@ int main(
             << std::endl;
 
         discord.clearActivity();
+        discord.disconnect();
 
         cleanup(
             ctx
@@ -325,6 +322,7 @@ int main(
     */
 
     discord.clearActivity();
+    discord.disconnect();
 
 
     /*

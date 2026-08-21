@@ -2,7 +2,6 @@
 
 #include <chrono>
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
@@ -28,22 +27,6 @@ constexpr std::uint32_t OP_FRAME = 1;
 
 constexpr std::size_t MAX_PACKET_SIZE =
     1024 * 1024;
-
-
-/*
-    ================================================================
-    DISCORD APPLICATION ID
-    ================================================================
-
-    Replace this with your Discord Application ID.
-
-    This value is NOT a secret.
-
-    Do NOT put a Discord bot token or client secret here.
-*/
-
-constexpr const char* DISCORD_APPLICATION_ID =
-    "REPLACE_WITH_DISCORD_APPLICATION_ID";
 
 
 /*
@@ -84,10 +67,6 @@ getSocketDirectories()
             );
         }
     }
-
-    /*
-        Always try /tmp as final fallback.
-    */
 
     directories.emplace_back(
         "/tmp"
@@ -149,10 +128,6 @@ std::string jsonEscape(
                 break;
 
             default:
-
-                /*
-                    Ignore ASCII control characters.
-                */
 
                 if(
                     static_cast<unsigned char>(c)
@@ -263,6 +238,14 @@ bool DiscordPresence::sendPacket(
         return false;
     }
 
+    if(
+        payload.size() >
+        MAX_PACKET_SIZE
+    )
+    {
+        return false;
+    }
+
     const std::uint32_t operation =
         static_cast<std::uint32_t>(
             opcode
@@ -286,10 +269,6 @@ bool DiscordPresence::sendPacket(
         &length,
         sizeof(length)
     );
-
-    /*
-        Write header completely.
-    */
 
     std::size_t headerOffset = 0;
 
@@ -315,10 +294,6 @@ bool DiscordPresence::sendPacket(
                 written
             );
     }
-
-    /*
-        Write payload completely.
-    */
 
     std::size_t payloadOffset = 0;
 
@@ -395,8 +370,13 @@ bool DiscordPresence::receivePacket(
             );
     }
 
+    const std::uint32_t opcode =
+        header[0];
+
     const std::uint32_t length =
         header[1];
+
+    (void)opcode;
 
     if(
         length >
@@ -531,6 +511,7 @@ bool DiscordPresence::connect(
 
         return false;
     }
+
 
     /*
         ============================================================
@@ -668,6 +649,30 @@ bool DiscordPresence::setActivity(
             << "Could not send Discord activity."
             << std::endl;
 
+        disconnect();
+
+        return false;
+    }
+
+    /*
+        Discord sends a response to SET_ACTIVITY.
+        Consume it so the IPC stream stays synchronized.
+    */
+
+    std::string response;
+
+    if(
+        !receivePacket(
+            response
+        )
+    )
+    {
+        std::cerr
+            << "Discord activity response was not received."
+            << std::endl;
+
+        disconnect();
+
         return false;
     }
 
@@ -726,13 +731,36 @@ void DiscordPresence::clearActivity()
         std::cerr
             << "Could not clear Discord activity."
             << std::endl;
+
+        disconnect();
+
+        return;
     }
-    else
+
+    /*
+        Consume Discord's response.
+    */
+
+    std::string response;
+
+    if(
+        !receivePacket(
+            response
+        )
+    )
     {
-        std::cout
-            << "Discord activity cleared."
+        std::cerr
+            << "Discord clear-activity response was not received."
             << std::endl;
+
+        disconnect();
+
+        return;
     }
+
+    std::cout
+        << "Discord activity cleared."
+        << std::endl;
 }
 
 

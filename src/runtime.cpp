@@ -1,6 +1,5 @@
 #include "runtime.hpp"
 #include "filesystem.hpp"
-#include "discord.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -59,6 +58,11 @@ std::filesystem::path getHome()
         std::getenv("HOME");
 
     if(home == nullptr)
+    {
+        return {};
+    }
+
+    if(*home == '\0')
     {
         return {};
     }
@@ -134,10 +138,6 @@ std::filesystem::path findProton(
     {
         return {};
     }
-
-    /*
-        Explicit Proton path has priority.
-    */
 
     if(!ctx.protonPath.empty())
     {
@@ -368,16 +368,13 @@ bool appendUserEnvironment(
         ctx.environment
     )
     {
-        /*
-            Runtime-owned variables must never be overridden
-            by the game configuration.
-        */
-
         if(
             key == "WINEPREFIX" ||
             key == "STEAM_COMPAT_DATA_PATH" ||
             key == "STEAM_COMPAT_CLIENT_INSTALL_PATH" ||
             key == "STEAM_COMPAT_INSTALL_PATH" ||
+            key == "SteamAppId" ||
+            key == "SteamGameId" ||
             key == "WINEUSERNAME" ||
             key == "USERNAME" ||
             key == "USERPROFILE" ||
@@ -416,34 +413,18 @@ bool appendUserEnvironment(
     ================================================================
     DETERMINE RUNTIME USER
     ================================================================
-
-    Wine:
-
-        Linux USER / LOGNAME
-
-    Proton:
-
-        Steam normally supplies:
-            SteamUser
-            Steam username information
-
-        If none is available, fall back to USER.
-
-    The name is NEVER hardcoded.
-
-    RetroDisc itself remains the persistent profile.
 */
 
 std::string determineRuntimeUser(
-    const Context& ctx
+    const Context&
 )
 {
     const char* candidates[] =
     {
-        std::getenv("STEAM_USER"),
-        std::getenv("SteamUser"),
         std::getenv("USER"),
-        std::getenv("LOGNAME")
+        std::getenv("LOGNAME"),
+        std::getenv("STEAM_USER"),
+        std::getenv("SteamUser")
     };
 
     for(const char* candidate : candidates)
@@ -454,14 +435,6 @@ std::string determineRuntimeUser(
         )
         {
             std::string value(candidate);
-
-            /*
-                Wine/Windows usernames should not contain
-                path separators.
-
-                If an invalid value is supplied, simply
-                continue to the next candidate.
-            */
 
             if(
                 value != "." &&
@@ -483,40 +456,6 @@ std::string determineRuntimeUser(
     ================================================================
     TEMPORARY USER PROFILE
     ================================================================
-
-    Persistent:
-
-        drive_c/users/RetroDisc
-
-    Runtime:
-
-        drive_c/users/<real user>
-
-    The runtime user is a symlink to RetroDisc.
-
-    Example:
-
-        drive_c/users/
-            RetroDisc/
-            maxim -> RetroDisc
-
-    or:
-
-        drive_c/users/
-            RetroDisc/
-            steamuser -> RetroDisc
-
-    Therefore:
-
-        %USERPROFILE%
-        %APPDATA%
-        %LOCALAPPDATA%
-        Documents
-        Desktop
-        Saved Games
-        etc.
-
-    all physically end up inside RetroDisc.
 */
 
 bool prepareRuntimeUser(
@@ -581,10 +520,6 @@ bool prepareRuntimeUser(
         return false;
     }
 
-    /*
-        RetroDisc itself must never be replaced.
-    */
-
     if(runtimeUser == "RetroDisc")
     {
         std::cerr
@@ -595,92 +530,63 @@ bool prepareRuntimeUser(
     }
 
     /*
-        Remove an old runtime-user link/directory.
-
-        Normally this should not exist because cleanup runs
-        after every game. This also makes crashed previous
-        launches recoverable.
+        Remove only an old symlink created by RetroDisc.
+        Never delete a real user directory.
     */
 
+    const auto status =
+        std::filesystem::symlink_status(
+            runtimeUserDirectory,
+            ec
+        );
+
     if(
-        std::filesystem::exists(
-            runtimeUserDirectory,
-            ec
-        ) ||
-        std::filesystem::is_symlink(
-            runtimeUserDirectory,
-            ec
-        )
+        !ec &&
+        std::filesystem::is_symlink(status)
     )
     {
-        ec.clear();
-
-        /*
-            We only remove the runtime user if it is a symlink.
-            Never recursively delete a real user directory.
-        */
-
-        const auto status =
-            std::filesystem::symlink_status(
-                runtimeUserDirectory,
-                ec
-            );
+        std::filesystem::remove(
+            runtimeUserDirectory,
+            ec
+        );
 
         if(ec)
         {
             std::cerr
-                << "Could not inspect runtime user:"
-                << std::endl
-                << "    "
-                << runtimeUserDirectory
-                << std::endl;
-
-            return false;
-        }
-
-        if(std::filesystem::is_symlink(status))
-        {
-            std::filesystem::remove(
-                runtimeUserDirectory,
-                ec
-            );
-
-            if(ec)
-            {
-                std::cerr
-                    << "Could not remove old runtime user link:"
-                    << std::endl
-                    << "    "
-                    << runtimeUserDirectory
-                    << std::endl
-                    << "    "
-                    << ec.message()
-                    << std::endl;
-
-                return false;
-            }
-        }
-        else
-        {
-            std::cerr
-                << "Runtime user directory already exists and is"
-                << " not a symlink:"
+                << "Could not remove old runtime user link:"
                 << std::endl
                 << "    "
                 << runtimeUserDirectory
                 << std::endl
-                << "Refusing to delete it."
+                << "    "
+                << ec.message()
                 << std::endl;
 
             return false;
         }
     }
+    else if(
+        !ec &&
+        std::filesystem::exists(
+            runtimeUserDirectory,
+            ec
+        )
+    )
+    {
+        std::cerr
+            << "Runtime user directory already exists and is"
+            << " not a symlink:"
+            << std::endl
+            << "    "
+            << runtimeUserDirectory
+            << std::endl
+            << "Refusing to delete it."
+            << std::endl;
 
-    /*
-        Create:
+        return false;
+    }
 
-            <runtimeUser> -> RetroDisc
-    */
+    ec.clear();
 
     std::filesystem::create_symlink(
         "RetroDisc",
@@ -716,20 +622,6 @@ bool prepareRuntimeUser(
         << "Persistent user:"
         << std::endl
         << "    RetroDisc"
-        << std::endl;
-
-    std::cout
-        << "Runtime profile:"
-        << std::endl
-        << "    "
-        << runtimeUserDirectory
-        << std::endl;
-
-    std::cout
-        << "Persistent profile:"
-        << std::endl
-        << "    "
-        << persistentUser
         << std::endl;
 
     return true;
@@ -775,16 +667,8 @@ void cleanupRuntimeUser(
         return;
     }
 
-    /*
-        Only remove our symlink.
-
-        Never recursively remove an actual directory.
-    */
-
     if(
-        std::filesystem::is_symlink(
-            status
-        )
+        std::filesystem::is_symlink(status)
     )
     {
         std::filesystem::remove(
@@ -835,22 +719,12 @@ std::string buildWineCommand(
 
     std::ostringstream command;
 
-    /*
-        Canonical Wine prefix.
-    */
-
     command
         << "export WINEPREFIX="
         << shellQuote(
             ctx.prefixOverlayDirectory.string()
         )
         << " && ";
-
-    /*
-        Runtime username.
-
-        Wine uses this for Windows-side user information.
-    */
 
     command
         << "export USERNAME="
@@ -866,10 +740,6 @@ std::string buildWineCommand(
         )
         << " && ";
 
-    /*
-        User environment.
-    */
-
     if(!appendUserEnvironment(
         command,
         ctx
@@ -877,13 +747,6 @@ std::string buildWineCommand(
     {
         return {};
     }
-
-    /*
-        DLL overrides.
-
-        IMPORTANT:
-        Keep this variable inside the function scope.
-    */
 
     const std::string dllOverrides =
         buildDllOverrides(ctx);
@@ -905,20 +768,12 @@ std::string buildWineCommand(
             << " && ";
     }
 
-    /*
-        Working directory.
-    */
-
     command
         << "cd "
         << shellQuote(
             ctx.mergedDirectory.string()
         )
         << " && ";
-
-    /*
-        Wine executable.
-    */
 
     command
         << "wine "
@@ -928,10 +783,6 @@ std::string buildWineCommand(
                 ctx.executable
             ).string()
         );
-
-    /*
-        Arguments.
-    */
 
     for(
         const auto& argument :
@@ -967,10 +818,15 @@ std::string buildProtonCommand(
     {
         std::cerr
             << "Proton not found:"
-            << std::endl
-            << "    "
-            << ctx.protonVersion
             << std::endl;
+
+        if(!ctx.protonVersion.empty())
+        {
+            std::cerr
+                << "    "
+                << ctx.protonVersion
+                << std::endl;
+        }
 
         return {};
     }
@@ -988,7 +844,7 @@ std::string buildProtonCommand(
     }
 
     /*
-        Proton compatibility data:
+        Compatibility data:
 
             ~/Games/RetroDisc/<gameId>/
 
@@ -1033,6 +889,7 @@ std::string buildProtonCommand(
 
     std::ostringstream command;
 
+
     /*
         ============================================================
         STEAM / PROTON ENVIRONMENT
@@ -1053,26 +910,59 @@ std::string buildProtonCommand(
         )
         << " && ";
 
-    command
-        << "export STEAM_COMPAT_INSTALL_PATH="
-        << shellQuote(
-            ctx.mergedDirectory.string()
-        )
-        << " && ";
+    /*
+        IMPORTANT:
+        Do not point STEAM_COMPAT_INSTALL_PATH at the temporary
+        game overlay. Proton's installation path is the game
+        installation itself and is already supplied through the
+        launch path/current working directory.
+    */
 
-    command
-        << "export SteamAppId="
-        << shellQuote(
-            ctx.gameId
-        )
-        << " && ";
+    /*
+        Do not invent a Steam App ID from our game ID.
+        Only forward numeric game IDs as Steam IDs.
+    */
 
-    command
-        << "export SteamGameId="
-        << shellQuote(
-            ctx.gameId
+    bool numericAppId =
+        !ctx.gameId.empty();
+
+    for(const char c : ctx.gameId)
+    {
+        if(
+            c < '0' ||
+            c > '9'
         )
-        << " && ";
+        {
+            numericAppId = false;
+            break;
+        }
+    }
+
+    if(numericAppId)
+    {
+        command
+            << "export SteamAppId="
+            << shellQuote(
+                ctx.gameId
+            )
+            << " && ";
+
+        command
+            << "export SteamGameId="
+            << shellQuote(
+                ctx.gameId
+            )
+            << " && ";
+    }
+    else
+    {
+        command
+            << "unset SteamAppId"
+            << " SteamGameId"
+            << " 2>/dev/null"
+            << " && ";
+    }
+
 
     /*
         ============================================================
@@ -1094,6 +984,7 @@ std::string buildProtonCommand(
         )
         << " && ";
 
+
     /*
         ============================================================
         USER ENVIRONMENT
@@ -1107,6 +998,7 @@ std::string buildProtonCommand(
     {
         return {};
     }
+
 
     /*
         ============================================================
@@ -1134,6 +1026,7 @@ std::string buildProtonCommand(
             << " && ";
     }
 
+
     /*
         ============================================================
         WORKING DIRECTORY
@@ -1146,6 +1039,7 @@ std::string buildProtonCommand(
             ctx.mergedDirectory.string()
         )
         << " && ";
+
 
     /*
         ============================================================
@@ -1164,10 +1058,6 @@ std::string buildProtonCommand(
                 ctx.executable
             ).string()
         );
-
-    /*
-        Arguments.
-    */
 
     for(
         const auto& argument :
@@ -1239,6 +1129,7 @@ bool launchGame(
         gameDirectory /
         ctx.executable;
 
+
     /*
         ============================================================
         GAME VALIDATION
@@ -1272,6 +1163,7 @@ bool launchGame(
         return false;
     }
 
+
     /*
         ============================================================
         SHARED PREFIX VALIDATION
@@ -1295,6 +1187,7 @@ bool launchGame(
         return false;
     }
 
+
     /*
         ============================================================
         DETERMINE TEMPORARY RUNTIME USER
@@ -1314,11 +1207,11 @@ bool launchGame(
         return false;
     }
 
-    /*
-        Create:
 
-            drive_c/users/<runtimeUser>
-                -> RetroDisc
+    /*
+        ============================================================
+        CREATE TEMPORARY USER LINK
+        ============================================================
     */
 
     if(!prepareRuntimeUser(
@@ -1329,6 +1222,7 @@ bool launchGame(
         cleanupFilesystem(ctx);
         return false;
     }
+
 
     /*
         ============================================================
@@ -1365,6 +1259,13 @@ bool launchGame(
 
     printEnvironment(ctx);
 
+
+    /*
+        ============================================================
+        BUILD COMMAND
+        ============================================================
+    */
+
     std::string command;
 
     if(ctx.runtime == "proton")
@@ -1396,6 +1297,7 @@ bool launchGame(
         return false;
     }
 
+
     /*
         ============================================================
         RUN
@@ -1407,6 +1309,7 @@ bool launchGame(
             command
         );
 
+
     /*
         ============================================================
         REMOVE TEMPORARY USER
@@ -1417,6 +1320,7 @@ bool launchGame(
         ctx,
         runtimeUser
     );
+
 
     /*
         ============================================================
