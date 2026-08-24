@@ -35,7 +35,7 @@ Instead, RetroDisc provides a standardized way to package and launch Windows gam
 
 ---
 
-# 🚀 Features
+# Features
 
 | Feature                | Description                                                                  |
 | ---------------------- | ---------------------------------------------------------------------------- |
@@ -89,7 +89,7 @@ This means that the original game media can remain portable and unchanged while 
 
 ---
 
-# 🌐 A Common Standard
+# A Common Standard
 
 RetroDisc defines a consistent structure for games and their launch configuration.
 
@@ -240,7 +240,7 @@ If no persistent prefix exists, RetroDisc can copy a bundled `pfx/` from the Ret
 
 ---
 
-# 🔧 Writable Game Files
+# Writable Game Files
 
 RetroDisc separates the original game files from writable runtime data.
 
@@ -372,7 +372,7 @@ The original game release remains unchanged throughout the process.
 
 ---
 
-# 🛡️ Persistent vs. Temporary Data
+# Persistent and Temporary Data
 
 RetroDisc intentionally separates persistent data from temporary runtime data.
 
@@ -412,7 +412,7 @@ Temporary data is removed after the game exits whenever cleanup succeeds.
 
 ---
 
-# 🧩 Wine and Proton
+# Wine / Proton
 
 RetroDisc supports both Wine and Proton.
 
@@ -444,7 +444,7 @@ A specific Proton installation can also be selected through the configuration.
 
 ---
 
-# 🎮 Example Configuration
+# Example Configuration
 
 A minimal game configuration can look like:
 
