@@ -6,15 +6,20 @@
 #include <iostream>
 #include <system_error>
 
+
 namespace
 {
+
 
 std::filesystem::path getHome()
 {
     const char* home =
         std::getenv("HOME");
 
-    if(home == nullptr)
+    if(
+        home == nullptr ||
+        *home == '\0'
+    )
     {
         return {};
     }
@@ -22,22 +27,89 @@ std::filesystem::path getHome()
     return std::filesystem::path(home);
 }
 
+
+/*
+    ================================================================
+    DIRECTORY EXISTS
+    ================================================================
+*/
+
 bool directoryExists(
     const std::filesystem::path& path
 )
 {
     std::error_code ec;
 
-    return
-        std::filesystem::exists(
-            path,
-            ec
-        ) &&
-        std::filesystem::is_directory(
+    const auto status =
+        std::filesystem::symlink_status(
             path,
             ec
         );
+
+    if(ec)
+    {
+        return false;
+    }
+
+    return std::filesystem::is_directory(
+        status
+    );
 }
+
+
+/*
+    ================================================================
+    REGULAR FILE EXISTS
+    ================================================================
+*/
+
+bool regularFileExists(
+    const std::filesystem::path& path
+)
+{
+    std::error_code ec;
+
+    const auto status =
+        std::filesystem::symlink_status(
+            path,
+            ec
+        );
+
+    if(ec)
+    {
+        return false;
+    }
+
+    return std::filesystem::is_regular_file(
+        status
+    );
+}
+
+
+/*
+    ================================================================
+    PREFIX VALIDATION
+    ================================================================
+
+    A Wine prefix does NOT need a "version" file to be usable.
+
+    Required structure:
+
+        pfx/
+        ├── drive_c/
+        ├── dosdevices/
+        ├── system.reg
+        └── user.reg
+
+    Proton prefixes use the same basic Wine prefix structure.
+
+    We deliberately do NOT require:
+
+        pfx/version
+
+    because that made otherwise valid prefixes appear missing.
+    ================================================================
+*/
 
 bool prefixLooksValid(
     const std::filesystem::path& prefix
@@ -48,63 +120,74 @@ bool prefixLooksValid(
         return false;
     }
 
+
     const auto driveC =
         prefix /
         "drive_c";
 
-    const auto systemReg =
-        prefix /
-        "system.reg";
-
-    const auto userReg =
-        prefix /
-        "user.reg";
 
     const auto dosDevices =
         prefix /
         "dosdevices";
 
-    return
-        std::filesystem::is_directory(
-            driveC
-        ) &&
-        std::filesystem::is_directory(
-            dosDevices
-        ) &&
-        (
-            std::filesystem::exists(
-                systemReg
-            ) ||
-            std::filesystem::exists(
-                userReg
-            )
-        );
+
+    const auto systemReg =
+        prefix /
+        "system.reg";
+
+
+    const auto userReg =
+        prefix /
+        "user.reg";
+
+
+    if(!directoryExists(
+        driveC
+    ))
+    {
+        return false;
+    }
+
+
+    if(!directoryExists(
+        dosDevices
+    ))
+    {
+        return false;
+    }
+
+
+    if(!regularFileExists(
+        systemReg
+    ))
+    {
+        return false;
+    }
+
+
+    if(!regularFileExists(
+        userReg
+    ))
+    {
+        return false;
+    }
+
+
+    return true;
 }
 
 
 /*
     ================================================================
-    COPY WINE PREFIX
+    COPY PREFIX ENTRY
     ================================================================
 
-    Important:
+    Symlinks are copied as symlinks.
 
-    Wine prefixes contain many symlinks, especially inside:
-
-        dosdevices/
-
-    std::filesystem::copy() is deliberately not used here because
-    different libstdc++ / filesystem implementations can follow
-    or mishandle these links.
-
-    We explicitly copy:
-
-        directories
-        regular files
-        symlinks
-
-    Symlink targets are copied exactly as stored in the source.
+    Their targets are NEVER followed.
+    ================================================================
 */
+
 bool copyPrefixEntry(
     const std::filesystem::path& source,
     const std::filesystem::path& destination
@@ -112,11 +195,13 @@ bool copyPrefixEntry(
 {
     std::error_code ec;
 
+
     const auto status =
         std::filesystem::symlink_status(
             source,
             ec
         );
+
 
     if(ec)
     {
@@ -133,19 +218,23 @@ bool copyPrefixEntry(
         return false;
     }
 
+
     /*
-        ------------------------------------------------------------
+        ============================================================
         SYMLINK
-        ------------------------------------------------------------
+        ============================================================
     */
 
-    if(std::filesystem::is_symlink(status))
+    if(std::filesystem::is_symlink(
+        status
+    ))
     {
         const auto target =
             std::filesystem::read_symlink(
                 source,
                 ec
             );
+
 
         if(ec)
         {
@@ -162,14 +251,23 @@ bool copyPrefixEntry(
             return false;
         }
 
+
+        const auto destinationStatus =
+            std::filesystem::symlink_status(
+                destination,
+                ec
+            );
+
+
         if(
-            std::filesystem::exists(
-                destination,
-                ec
-            ) ||
-            std::filesystem::is_symlink(
-                destination,
-                ec
+            !ec &&
+            (
+                std::filesystem::exists(
+                    destinationStatus
+                ) ||
+                std::filesystem::is_symlink(
+                    destinationStatus
+                )
             )
         )
         {
@@ -179,6 +277,7 @@ bool copyPrefixEntry(
                 destination,
                 ec
             );
+
 
             if(ec)
             {
@@ -196,11 +295,13 @@ bool copyPrefixEntry(
             }
         }
 
+
         std::filesystem::create_symlink(
             target,
             destination,
             ec
         );
+
 
         if(ec)
         {
@@ -224,21 +325,64 @@ bool copyPrefixEntry(
             return false;
         }
 
+
         return true;
     }
 
+
     /*
-        ------------------------------------------------------------
+        ============================================================
         DIRECTORY
-        ------------------------------------------------------------
+        ============================================================
     */
 
-    if(std::filesystem::is_directory(status))
+    if(std::filesystem::is_directory(
+        status
+    ))
     {
-        if(!std::filesystem::exists(
-            destination,
-            ec
-        ))
+        const auto destinationStatus =
+            std::filesystem::symlink_status(
+                destination,
+                ec
+            );
+
+
+        if(
+            !ec &&
+            std::filesystem::is_symlink(
+                destinationStatus
+            )
+        )
+        {
+            std::filesystem::remove(
+                destination,
+                ec
+            );
+
+
+            if(ec)
+            {
+                std::cerr
+                    << "Could not remove destination symlink:"
+                    << std::endl
+                    << "    "
+                    << destination
+                    << std::endl
+                    << "    "
+                    << ec.message()
+                    << std::endl;
+
+                return false;
+            }
+        }
+
+
+        if(
+            !std::filesystem::exists(
+                destination,
+                ec
+            )
+        )
         {
             ec.clear();
 
@@ -246,6 +390,7 @@ bool copyPrefixEntry(
                 destination,
                 ec
             );
+
 
             if(ec)
             {
@@ -263,61 +408,73 @@ bool copyPrefixEntry(
             }
         }
 
+
+        std::filesystem::directory_iterator iterator(
+            source,
+            std::filesystem::directory_options::
+                skip_permission_denied,
+            ec
+        );
+
+
+        if(ec)
+        {
+            std::cerr
+                << "Could not read prefix directory:"
+                << std::endl
+                << "    "
+                << source
+                << std::endl
+                << "    "
+                << ec.message()
+                << std::endl;
+
+            return false;
+        }
+
+
         for(
             const auto& entry :
-            std::filesystem::directory_iterator(
-                source,
-                std::filesystem::directory_options::
-                    skip_permission_denied,
-                ec
-            )
+            iterator
         )
         {
-            if(ec)
-            {
-                std::cerr
-                    << "Could not read prefix directory:"
-                    << std::endl
-                    << "    "
-                    << source
-                    << std::endl
-                    << "    "
-                    << ec.message()
-                    << std::endl;
-
-                return false;
-            }
-
-            const auto childDestination =
+            const auto target =
                 destination /
                 entry.path().filename();
 
+
             if(!copyPrefixEntry(
                 entry.path(),
-                childDestination
+                target
             ))
             {
                 return false;
             }
         }
 
+
         return true;
     }
 
+
     /*
-        ------------------------------------------------------------
+        ============================================================
         REGULAR FILE
-        ------------------------------------------------------------
+        ============================================================
     */
 
-    if(std::filesystem::is_regular_file(status))
+    if(std::filesystem::is_regular_file(
+        status
+    ))
     {
         std::filesystem::copy_file(
             source,
             destination,
-            std::filesystem::copy_options::overwrite_existing,
+            std::filesystem::copy_options::
+                overwrite_existing,
             ec
         );
+
 
         if(ec)
         {
@@ -339,13 +496,15 @@ bool copyPrefixEntry(
             return false;
         }
 
+
         return true;
     }
 
+
     /*
-        ------------------------------------------------------------
-        OTHER FILE TYPE
-        ------------------------------------------------------------
+        ============================================================
+        UNKNOWN TYPE
+        ============================================================
     */
 
     std::cerr
@@ -355,37 +514,68 @@ bool copyPrefixEntry(
         << source
         << std::endl;
 
+
     return false;
 }
 
+
+/*
+    ================================================================
+    COPY WINE PREFIX
+    ================================================================
+*/
 
 bool copyWinePrefix(
     const std::filesystem::path& source,
     const std::filesystem::path& destination
 )
 {
-    std::error_code ec;
-
-    if(!directoryExists(source))
+    if(!prefixLooksValid(
+        source
+    ))
     {
         std::cerr
-            << "Bundled Wine prefix is not a directory:"
+            << "Bundled Wine prefix is invalid or incomplete:"
             << std::endl
             << "    "
             << source
             << std::endl;
 
+        std::cerr
+            << "Required:"
+            << std::endl
+            << "    drive_c/"
+            << std::endl
+            << "    dosdevices/"
+            << std::endl
+            << "    system.reg"
+            << std::endl
+            << "    user.reg"
+            << std::endl;
+
         return false;
     }
 
+
+    std::error_code ec;
+
+
+    const auto destinationStatus =
+        std::filesystem::symlink_status(
+            destination,
+            ec
+        );
+
+
     if(
-        std::filesystem::exists(
-            destination,
-            ec
-        ) ||
-        std::filesystem::is_symlink(
-            destination,
-            ec
+        !ec &&
+        (
+            std::filesystem::exists(
+                destinationStatus
+            ) ||
+            std::filesystem::is_symlink(
+                destinationStatus
+            )
         )
     )
     {
@@ -399,10 +589,12 @@ bool copyWinePrefix(
         return false;
     }
 
+
     std::filesystem::create_directories(
         destination,
         ec
     );
+
 
     if(ec)
     {
@@ -419,6 +611,7 @@ bool copyWinePrefix(
         return false;
     }
 
+
     std::cout
         << "Copying bundled Wine prefix:"
         << std::endl
@@ -433,43 +626,57 @@ bool copyWinePrefix(
         << destination
         << std::endl;
 
+
+    std::filesystem::directory_iterator iterator(
+        source,
+        std::filesystem::directory_options::
+            skip_permission_denied,
+        ec
+    );
+
+
+    if(ec)
+    {
+        std::cerr
+            << "Could not read bundled Wine prefix:"
+            << std::endl
+            << "    "
+            << source
+            << std::endl
+            << "    "
+            << ec.message()
+            << std::endl;
+
+        return false;
+    }
+
+
     for(
         const auto& entry :
-        std::filesystem::directory_iterator(
-            source,
-            std::filesystem::directory_options::
-                skip_permission_denied,
-            ec
-        )
+        iterator
     )
     {
-        if(ec)
-        {
-            std::cerr
-                << "Could not read bundled Wine prefix:"
-                << std::endl
-                << "    "
-                << source
-                << std::endl
-                << "    "
-                << ec.message()
-                << std::endl;
-
-            return false;
-        }
-
         const auto target =
             destination /
             entry.path().filename();
+
 
         if(!copyPrefixEntry(
             entry.path(),
             target
         ))
         {
+            std::cerr
+                << "Failed while copying:"
+                << std::endl
+                << "    "
+                << entry.path()
+                << std::endl;
+
             return false;
         }
     }
+
 
     if(!prefixLooksValid(
         destination
@@ -485,15 +692,24 @@ bool copyWinePrefix(
         return false;
     }
 
+
     std::cout
         << "Bundled Wine prefix copied successfully."
         << std::endl;
 
+
     return true;
 }
 
+
 } // namespace
 
+
+/*
+    ================================================================
+    GLOBAL PREFIX
+    ================================================================
+*/
 
 bool prepareGlobalPrefix(
     Context& ctx
@@ -502,6 +718,7 @@ bool prepareGlobalPrefix(
     const auto home =
         getHome();
 
+
     if(home.empty())
     {
         std::cerr
@@ -511,20 +728,45 @@ bool prepareGlobalPrefix(
         return false;
     }
 
-    /*
-        The global prefix is no longer used as an overlay.
-
-        Keep the field populated for compatibility with the
-        existing Context structure.
-    */
 
     ctx.globalPrefixDirectory =
         home /
         ".RetroDisc";
 
+
+    std::error_code ec;
+
+    std::filesystem::create_directories(
+        ctx.globalPrefixDirectory,
+        ec
+    );
+
+
+    if(ec)
+    {
+        std::cerr
+            << "Could not create global RetroDisc directory:"
+            << std::endl
+            << "    "
+            << ctx.globalPrefixDirectory
+            << std::endl
+            << "    "
+            << ec.message()
+            << std::endl;
+
+        return false;
+    }
+
+
     return true;
 }
 
+
+/*
+    ================================================================
+    LOCAL PREFIX
+    ================================================================
+*/
 
 bool prepareLocalPrefix(
     Context& ctx
@@ -533,6 +775,7 @@ bool prepareLocalPrefix(
     const auto home =
         getHome();
 
+
     if(home.empty())
     {
         std::cerr
@@ -542,24 +785,9 @@ bool prepareLocalPrefix(
         return false;
     }
 
-    /*
-        ============================================================
-        PERSISTENT GAME DIRECTORY
-        ============================================================
-
-        Without --datapath:
-
-            ~/Games/RetroDisc/<gameId>/
-
-        With --datapath:
-
-            <datapath>/
-
-        The supplied datapath is already the complete game
-        directory. The gameId is NOT appended.
-    */
 
     std::filesystem::path localGameDirectory;
+
 
     if(!ctx.dataPath.empty())
     {
@@ -575,18 +803,15 @@ bool prepareLocalPrefix(
             ctx.gameId;
     }
 
-    /*
-        Persistent Wine prefix:
-
-            <persistent game directory>/pfx
-    */
 
     const auto localPrefix =
         localGameDirectory /
         "pfx";
 
+
     ctx.prefixOverlayDirectory =
         localPrefix;
+
 
     try
     {
@@ -608,9 +833,10 @@ bool prepareLocalPrefix(
         return false;
     }
 
+
     /*
         ============================================================
-        EXISTING COMPLETE PREFIX
+        EXISTING PREFIX
         ============================================================
     */
 
@@ -628,10 +854,11 @@ bool prepareLocalPrefix(
         return true;
     }
 
-    /*
-        Existing but incomplete prefix.
 
-        Do not destroy it automatically.
+    /*
+        ============================================================
+        EXISTING BUT INVALID PREFIX
+        ============================================================
     */
 
     if(directoryExists(
@@ -652,11 +879,14 @@ bool prepareLocalPrefix(
             << std::endl
             << "    dosdevices/"
             << std::endl
-            << "    system.reg or user.reg"
+            << "    system.reg"
+            << std::endl
+            << "    user.reg"
             << std::endl;
 
         return false;
     }
+
 
     /*
         ============================================================
@@ -668,6 +898,7 @@ bool prepareLocalPrefix(
         ctx.root /
         "pfx";
 
+
     if(prefixLooksValid(
         bundledPrefix
     ))
@@ -676,12 +907,14 @@ bool prepareLocalPrefix(
             << "No persistent game prefix found."
             << std::endl;
 
+
         std::cout
             << "Bundled prefix found:"
             << std::endl
             << "    "
             << bundledPrefix
             << std::endl;
+
 
         if(!copyWinePrefix(
             bundledPrefix,
@@ -695,22 +928,10 @@ bool prepareLocalPrefix(
             return false;
         }
 
-        if(!prefixLooksValid(
-            localPrefix
-        ))
-        {
-            std::cerr
-                << "Copied Wine prefix failed validation:"
-                << std::endl
-                << "    "
-                << localPrefix
-                << std::endl;
-
-            return false;
-        }
 
         return true;
     }
+
 
     /*
         ============================================================
@@ -732,9 +953,16 @@ bool prepareLocalPrefix(
         << bundledPrefix
         << std::endl;
 
+
     return false;
 }
 
+
+/*
+    ================================================================
+    PREPARE PREFIX
+    ================================================================
+*/
 
 bool preparePrefix(
     Context& ctx
@@ -747,6 +975,7 @@ bool preparePrefix(
         return false;
     }
 
+
     if(!prepareLocalPrefix(
         ctx
     ))
@@ -754,12 +983,10 @@ bool preparePrefix(
         return false;
     }
 
-    /*
-        Prefix overlay no longer exists.
-    */
 
     ctx.prefixOverlayMounted =
         false;
+
 
     std::cout
         << std::endl
@@ -770,6 +997,7 @@ bool preparePrefix(
         << "================================================"
         << std::endl;
 
+
     std::cout
         << "Prefix:"
         << std::endl
@@ -777,9 +1005,11 @@ bool preparePrefix(
         << ctx.prefixOverlayDirectory
         << std::endl;
 
+
     std::cout
         << "Prefix overlay: disabled."
         << std::endl;
+
 
     return true;
 }

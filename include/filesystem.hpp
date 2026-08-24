@@ -1,12 +1,14 @@
-
 #pragma once
 
 #include <filesystem>
 
 #include "context.hpp"
 
+
 /*
+    ================================================================
     GAME FILESYSTEM OVERLAY
+    ================================================================
 
     lowerdir:
         Original game installation
@@ -25,45 +27,39 @@ bool prepareFilesystem(
     Context& ctx
 );
 
-/*
-    GAME OVERLAY
-*/
 
 bool mountOverlay(
     Context& ctx
 );
 
+
 /*
-    PREFIX OVERLAY
+    Prefix overlays are intentionally disabled.
 
-    lowerdir:
-        ~/.RetroDisc
+    The Wine/Proton prefix is now persistent directly at:
 
-    upperdir:
         ~/Games/RetroDisc/<gameId>/pfx
 
-    merged:
-        /tmp/RetroDiscPrefix_<pid>/merged
+    or:
 
-    workdir:
-        /tmp/RetroDiscPrefixWork_<pid>/work
+        <datapath>/pfx
 */
 
 bool mountPrefixOverlay(
     Context& ctx
 );
 
+
 /*
+    ================================================================
     CLEANUP
+    ================================================================
 */
 
 bool cleanupFilesystem(
     Context& ctx
 );
 
-/*
-    GENERAL CLEANUP
-*/
 
 bool cleanup(
     Context& ctx

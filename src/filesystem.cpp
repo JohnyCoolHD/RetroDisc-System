@@ -16,6 +16,12 @@ namespace
 {
 
 
+/*
+    ================================================================
+    SHELL QUOTING
+    ================================================================
+*/
+
 std::string shellQuote(
     const std::string& value
 )
@@ -39,6 +45,12 @@ std::string shellQuote(
     return result;
 }
 
+
+/*
+    ================================================================
+    RUN COMMAND
+    ================================================================
+*/
 
 bool runCommand(
     const std::string& command,
@@ -71,6 +83,12 @@ bool runCommand(
 }
 
 
+/*
+    ================================================================
+    UNMOUNT
+    ================================================================
+*/
+
 bool unmountPath(
     const std::filesystem::path& path
 )
@@ -85,9 +103,6 @@ bool unmountPath(
             path.string()
         );
 
-    /*
-        Normal unmount.
-    */
 
     if(runCommand(
         "fusermount3 -u " +
@@ -98,9 +113,6 @@ bool unmountPath(
         return true;
     }
 
-    /*
-        Fallback.
-    */
 
     if(runCommand(
         "fusermount -u " +
@@ -111,9 +123,6 @@ bool unmountPath(
         return true;
     }
 
-    /*
-        Lazy unmount.
-    */
 
     if(runCommand(
         "fusermount3 -uz " +
@@ -124,6 +133,7 @@ bool unmountPath(
         return true;
     }
 
+
     if(runCommand(
         "fusermount -uz " +
         quoted +
@@ -133,9 +143,16 @@ bool unmountPath(
         return true;
     }
 
+
     return false;
 }
 
+
+/*
+    ================================================================
+    REMOVE DIRECTORY
+    ================================================================
+*/
 
 bool removeDirectory(
     const std::filesystem::path& path
@@ -148,10 +165,40 @@ bool removeDirectory(
 
     std::error_code ec;
 
-    if(!std::filesystem::exists(
-        path,
-        ec
-    ))
+    /*
+        Use symlink_status here.
+
+        std::filesystem::exists() follows symlinks and can therefore
+        itself encounter a broken/recursive symlink.
+    */
+
+    const auto status =
+        std::filesystem::symlink_status(
+            path,
+            ec
+        );
+
+    if(ec)
+    {
+        return true;
+    }
+
+    if(
+        std::filesystem::is_symlink(status) ||
+        std::filesystem::is_regular_file(status)
+    )
+    {
+        std::filesystem::remove(
+            path,
+            ec
+        );
+
+        return !ec;
+    }
+
+    if(
+        !std::filesystem::is_directory(status)
+    )
     {
         return true;
     }
@@ -180,6 +227,12 @@ bool removeDirectory(
 }
 
 
+/*
+    ================================================================
+    MOUNT CHECK
+    ================================================================
+*/
+
 bool isMounted(
     const std::filesystem::path& path
 )
@@ -204,6 +257,17 @@ bool isMounted(
     ================================================================
     REPLICATE DIRECTORY STRUCTURE
     ================================================================
+
+    IMPORTANT:
+
+    Never use std::filesystem::relative() here.
+
+    std::filesystem::relative() may resolve symlinks.
+
+    Wine/game installations can contain valid symlinks and, in the
+    damaged-prefix case, recursive symlinks.
+
+    We therefore calculate the path purely lexically.
 */
 
 bool replicateDirectoryStructure(
@@ -213,10 +277,18 @@ bool replicateDirectoryStructure(
 {
     std::error_code ec;
 
-    if(!std::filesystem::exists(
-        source,
-        ec
-    ))
+    const auto sourceStatus =
+        std::filesystem::symlink_status(
+            source,
+            ec
+        );
+
+    if(
+        ec ||
+        !std::filesystem::is_directory(
+            sourceStatus
+        )
+    )
     {
         std::cerr
             << "Source directory does not exist:"
@@ -228,26 +300,13 @@ bool replicateDirectoryStructure(
         return false;
     }
 
-    if(!std::filesystem::is_directory(
-        source,
-        ec
-    ))
-    {
-        std::cerr
-            << "Source is not a directory:"
-            << std::endl
-            << "    "
-            << source
-            << std::endl;
-
-        return false;
-    }
 
     try
     {
         std::filesystem::create_directories(
             destination
         );
+
 
         for(
             const auto& entry :
@@ -260,38 +319,67 @@ bool replicateDirectoryStructure(
         {
             std::error_code entryError;
 
-            if(!entry.is_directory(
-                entryError
-            ))
-            {
-                continue;
-            }
-
-            const auto relative =
-                std::filesystem::relative(
-                    entry.path(),
-                    source,
-                    ec
+            const auto status =
+                entry.symlink_status(
+                    entryError
                 );
 
-            if(ec)
+            if(entryError)
             {
                 std::cerr
-                    << "Could not determine relative directory:"
+                    << "Could not inspect directory entry:"
                     << std::endl
                     << "    "
                     << entry.path()
                     << std::endl
                     << "    "
-                    << ec.message()
+                    << entryError.message()
                     << std::endl;
 
                 return false;
             }
 
+
+            /*
+                Only replicate real directories.
+
+                Symlinks are deliberately ignored because this
+                function creates only the upper directory structure.
+            */
+
+            if(
+                !std::filesystem::is_directory(status)
+            )
+            {
+                continue;
+            }
+
+
+            /*
+                PURELY LEXICAL RELATIVE PATH.
+
+                This does NOT follow symlinks.
+            */
+
+            const auto relative =
+                entry.path().lexically_relative(
+                    source
+                );
+
+
+            if(
+                relative.empty() ||
+                relative == "."
+            )
+            {
+                continue;
+            }
+
+
             const auto target =
                 destination /
                 relative;
+
 
             std::filesystem::create_directories(
                 target
@@ -310,12 +398,19 @@ bool replicateDirectoryStructure(
         return false;
     }
 
+
     return true;
 }
 
 
 } // namespace
 
+
+/*
+    ================================================================
+    PREPARE FILESYSTEM
+    ================================================================
+*/
 
 bool prepareFilesystem(
     Context& ctx
@@ -333,7 +428,7 @@ bool prepareFilesystem(
 
     /*
         ============================================================
-        GAMEDATA
+        GAME DIRECTORY
         ============================================================
     */
 
@@ -341,32 +436,30 @@ bool prepareFilesystem(
         ctx.root /
         "gamedata";
 
-    if(!std::filesystem::exists(
-        ctx.gameDirectory
-    ))
+
     {
-        std::cerr
-            << "GameData directory does not exist:"
-            << std::endl
-            << "    "
-            << ctx.gameDirectory
-            << std::endl;
+        std::error_code ec;
 
-        return false;
-    }
+        const auto status =
+            std::filesystem::symlink_status(
+                ctx.gameDirectory,
+                ec
+            );
 
-    if(!std::filesystem::is_directory(
-        ctx.gameDirectory
-    ))
-    {
-        std::cerr
-            << "GameData is not a directory:"
-            << std::endl
-            << "    "
-            << ctx.gameDirectory
-            << std::endl;
+        if(
+            ec ||
+            !std::filesystem::is_directory(status)
+        )
+        {
+            std::cerr
+                << "GameData directory does not exist:"
+                << std::endl
+                << "    "
+                << ctx.gameDirectory
+                << std::endl;
 
-        return false;
+            return false;
+        }
     }
 
 
@@ -384,19 +477,24 @@ bool prepareFilesystem(
             .lexically_normal()
             .generic_string();
 
+
     const std::string prefix =
         "gamedata/";
 
-    if(executable.rfind(
-        prefix,
-        0
-    ) == 0)
+
+    if(
+        executable.rfind(
+            prefix,
+            0
+        ) == 0
+    )
     {
         executable =
             executable.substr(
                 prefix.size()
             );
     }
+
 
     while(
         !executable.empty() &&
@@ -407,6 +505,7 @@ bool prepareFilesystem(
             executable.begin()
         );
     }
+
 
     ctx.executable =
         executable;
@@ -421,7 +520,7 @@ bool prepareFilesystem(
     const char* home =
         std::getenv("HOME");
 
-    if(home == nullptr)
+    if(home == nullptr || *home == '\0')
     {
         std::cerr
             << "HOME is not set."
@@ -433,19 +532,12 @@ bool prepareFilesystem(
 
     /*
         ============================================================
-        PERSISTENT GAMEDATA
+        PERSISTENT GAME DATA
         ============================================================
-
-        Without --datapath:
-
-            ~/Games/RetroDisc/<gameId>/gamedata
-
-        With --datapath:
-
-            <datapath>/gamedata
     */
 
     std::filesystem::path persistentGameDirectory;
+
 
     if(!ctx.dataPath.empty())
     {
@@ -461,9 +553,11 @@ bool prepareFilesystem(
             ctx.gameId;
     }
 
+
     ctx.gameOverlayUpperDirectory =
         persistentGameDirectory /
         "gamedata";
+
 
     ctx.gameDataDirectory =
         ctx.gameOverlayUpperDirectory;
@@ -480,12 +574,14 @@ bool prepareFilesystem(
             getpid()
         );
 
+
     ctx.mergedDirectory =
         std::filesystem::path("/tmp") /
         (
             "RetroDisc_" +
             pid
         );
+
 
     ctx.overlayWorkDirectory =
         std::filesystem::path("/tmp") /
@@ -532,6 +628,7 @@ bool prepareFilesystem(
         << "Replicating GameData directory structure..."
         << std::endl;
 
+
     if(!replicateDirectoryStructure(
         ctx.gameDirectory,
         ctx.gameOverlayUpperDirectory
@@ -540,8 +637,10 @@ bool prepareFilesystem(
         return false;
     }
 
+
     ctx.overlayMounted =
         false;
+
 
     ctx.prefixOverlayMounted =
         false;
@@ -558,15 +657,18 @@ bool prepareFilesystem(
         << ctx.gameDirectory
         << std::endl;
 
+
     std::cout
         << "Game overlay upper: "
         << ctx.gameOverlayUpperDirectory
         << std::endl;
 
+
     std::cout
         << "Temporary game mount: "
         << ctx.mergedDirectory
         << std::endl;
+
 
     std::cout
         << "Executable: "
@@ -578,6 +680,12 @@ bool prepareFilesystem(
 }
 
 
+/*
+    ================================================================
+    MOUNT GAME OVERLAY
+    ================================================================
+*/
+
 bool mountOverlay(
     Context& ctx
 )
@@ -586,6 +694,7 @@ bool mountOverlay(
     {
         return true;
     }
+
 
     if(
         ctx.gameDirectory.empty() ||
@@ -601,12 +710,23 @@ bool mountOverlay(
         return false;
     }
 
+
     std::error_code ec;
 
-    if(!std::filesystem::is_directory(
-        ctx.gameDirectory,
-        ec
-    ))
+
+    const auto gameStatus =
+        std::filesystem::symlink_status(
+            ctx.gameDirectory,
+            ec
+        );
+
+
+    if(
+        ec ||
+        !std::filesystem::is_directory(
+            gameStatus
+        )
+    )
     {
         std::cerr
             << "GameData is not a directory:"
@@ -618,6 +738,7 @@ bool mountOverlay(
         return false;
     }
 
+
     if(!replicateDirectoryStructure(
         ctx.gameDirectory,
         ctx.gameOverlayUpperDirectory
@@ -625,6 +746,7 @@ bool mountOverlay(
     {
         return false;
     }
+
 
     if(isMounted(
         ctx.mergedDirectory
@@ -668,9 +790,11 @@ bool mountOverlay(
             ctx.mergedDirectory.string()
         );
 
+
     std::cout
         << "Mounting game overlay..."
         << std::endl;
+
 
     if(!runCommand(
         command
@@ -683,13 +807,14 @@ bool mountOverlay(
         return false;
     }
 
+
     ctx.overlayMounted =
         true;
 
 
     /*
         ============================================================
-        EXECUTABLE
+        EXECUTABLE VALIDATION
         ============================================================
     */
 
@@ -697,9 +822,27 @@ bool mountOverlay(
         ctx.mergedDirectory /
         ctx.executable;
 
-    if(!std::filesystem::exists(
-        executable
-    ))
+
+    std::error_code executableError;
+
+    const auto executableStatus =
+        std::filesystem::symlink_status(
+            executable,
+            executableError
+        );
+
+
+    if(
+        executableError ||
+        !(
+            std::filesystem::is_regular_file(
+                executableStatus
+            ) ||
+            std::filesystem::is_symlink(
+                executableStatus
+            )
+        )
+    )
     {
         std::cerr
             << "Executable is not visible through game overlay:"
@@ -708,24 +851,57 @@ bool mountOverlay(
             << executable
             << std::endl;
 
+
         unmountPath(
             ctx.mergedDirectory
         );
 
+
         ctx.overlayMounted =
             false;
 
+
         return false;
     }
+
 
     std::cout
         << "Overlay executable: "
         << executable
         << std::endl;
 
+
     return true;
 }
 
+
+/*
+    ================================================================
+    PREFIX OVERLAY
+    ================================================================
+
+    Kept only for API compatibility.
+
+    The current architecture does NOT use a prefix overlay.
+*/
+
+bool mountPrefixOverlay(
+    Context&
+)
+{
+    std::cerr
+        << "Prefix overlay is disabled."
+        << std::endl;
+
+    return false;
+}
+
+
+/*
+    ================================================================
+    CLEANUP FILESYSTEM
+    ================================================================
+*/
 
 bool cleanupFilesystem(
     Context& ctx
@@ -747,10 +923,12 @@ bool cleanupFilesystem(
             << "Unmounting game overlay..."
             << std::endl;
 
+
         bool unmounted =
             unmountPath(
                 ctx.mergedDirectory
             );
+
 
         if(!unmounted)
         {
@@ -760,11 +938,13 @@ bool cleanupFilesystem(
                 )
             );
 
+
             unmounted =
                 unmountPath(
                     ctx.mergedDirectory
                 );
         }
+
 
         if(!unmounted)
         {
@@ -802,6 +982,7 @@ bool cleanupFilesystem(
                 false;
         }
 
+
         if(!removeDirectory(
             ctx.overlayWorkDirectory.parent_path()
         ))
@@ -821,9 +1002,16 @@ bool cleanupFilesystem(
     ctx.prefixOverlayMounted =
         false;
 
+
     return success;
 }
 
+
+/*
+    ================================================================
+    GENERAL CLEANUP
+    ================================================================
+*/
 
 bool cleanup(
     Context& ctx

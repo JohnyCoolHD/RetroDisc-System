@@ -7,6 +7,7 @@
 
 #include "discord.hpp"
 
+
 struct WineGraphics
 {
     std::string renderer;
@@ -15,12 +16,14 @@ struct WineGraphics
     bool strictDrawOrdering = false;
 };
 
+
 struct WineSync
 {
     bool esync = false;
     bool fsync = false;
     bool ntsync = false;
 };
+
 
 struct WineWindow
 {
@@ -29,12 +32,14 @@ struct WineWindow
     bool mouseCapture = true;
 };
 
+
 struct WineScaling
 {
     bool enabled = false;
     std::string mode;
     std::string filter;
 };
+
 
 struct WineVirtualDesktop
 {
@@ -43,6 +48,7 @@ struct WineVirtualDesktop
     int height = 480;
 };
 
+
 struct WineDisplay
 {
     WineWindow window;
@@ -50,6 +56,7 @@ struct WineDisplay
     WineVirtualDesktop virtualDesktop;
     int dpi = 96;
 };
+
 
 struct WineConfig
 {
@@ -65,13 +72,14 @@ struct WineConfig
     > dllOverrides;
 };
 
+
 struct Context
 {
     std::filesystem::path root;
 
     /*
         ============================================================
-        PERSISTENT GAME DATA PATH
+        PERSISTENT GAME DATA
         ============================================================
 
         Without --datapath:
@@ -82,10 +90,7 @@ struct Context
 
             <datapath>/
 
-        The supplied datapath is already the complete persistent
-        directory for this game.
-
-        The gameId is NOT appended when --datapath is used.
+        The supplied datapath is the complete persistent directory.
     */
 
     std::filesystem::path dataPath;
@@ -109,6 +114,7 @@ struct Context
 
     WineConfig wine;
 
+
     /*
         ============================================================
         GAME FILESYSTEM
@@ -116,37 +122,50 @@ struct Context
     */
 
     std::filesystem::path gameDirectory;
+
     std::filesystem::path gameOverlayUpperDirectory;
+
     std::filesystem::path gameDataDirectory;
 
     std::filesystem::path mergedDirectory;
+
     std::filesystem::path overlayWorkDirectory;
 
     bool overlayMounted = false;
+
 
     /*
         ============================================================
         WINE PREFIX
         ============================================================
 
-        There is NO prefix overlay anymore.
+        There is NO prefix overlay.
 
         globalPrefixDirectory:
+
             ~/.RetroDisc
 
         prefixOverlayDirectory:
+
             <persistent game directory>/pfx
 
-        The name prefixOverlayDirectory is retained here to avoid
-        unnecessarily changing the rest of the code/API. It is now
-        simply the persistent game prefix.
+        The old member name is retained for API compatibility.
     */
 
     std::filesystem::path globalPrefixDirectory;
+
     std::filesystem::path prefixOverlayDirectory;
 
     bool prefixOverlayMounted = false;
 
+
+    /*
+        ============================================================
+        DISCORD
+        ============================================================
+    */
+
     DiscordPresence discord;
+
     bool discordEnabled = false;
 };
