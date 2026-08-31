@@ -1,0 +1,3 @@
+/home/maxim/Documents/GitHub/RetroDisc-System/build/CMakeFiles/RetroDisc.dir
+/home/maxim/Documents/GitHub/RetroDisc-System/build/CMakeFiles/edit_cache.dir
+/home/maxim/Documents/GitHub/RetroDisc-System/build/CMakeFiles/rebuild_cache.dir

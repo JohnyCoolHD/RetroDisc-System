@@ -240,10 +240,24 @@ add_executable(
     RetroDisc
 
     src/main.cpp
-    src/config.cpp
-    src/filesystem.cpp
+
+    src/config/path.cpp
+    src/config/defaults.cpp
+    src/config/manifest.cpp
+    src/config/load.cpp
+
+    src/filesystem/prepare.cpp
+    src/filesystem/overlay.cpp
+    src/filesystem/cleanup.cpp
+    src/filesystem/mount.cpp
+    src/filesystem/directory.cpp
+    src/filesystem/command.cpp
+
+    src/registry/validation.cpp
+    src/registry/copy.cpp
+    src/registry/prefix.cpp
+
     src/runtime.cpp
-    src/registry.cpp
     src/discord.cpp
 
     "${RETRODISC_GENERATED_RUNTIME_CONFIG_CPP}"
