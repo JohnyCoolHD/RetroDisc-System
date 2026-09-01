@@ -134,29 +134,37 @@ struct Context
     bool overlayMounted = false;
 
 
+
     /*
-        ============================================================
+        ================================================================
         WINE PREFIX
-        ============================================================
+        ================================================================
 
-        There is NO prefix overlay.
+        The Wine prefix is assembled using fuse-overlayfs.
 
-        globalPrefixDirectory:
+        Lowerdir:
+            ~/.RetroDisc/pfx
 
-            ~/.RetroDisc
-
-        prefixOverlayDirectory:
-
+        Upperdir:
             <persistent game directory>/pfx
 
-        The old member name is retained for API compatibility.
+        Workdir:
+            <persistent game directory>/.prefix_work
+
+        Mountpoint:
+            /tmp/RetroDisc-<gameId>/merged_prefix
+
+        Wine uses the merged directory as its prefix.
     */
 
     std::filesystem::path globalPrefixDirectory;
-
+    std::filesystem::path prefixLowerDirectory;
     std::filesystem::path prefixOverlayDirectory;
+    std::filesystem::path prefixMergedDirectory;
+    std::filesystem::path prefixWorkDirectory;
 
     bool prefixOverlayMounted = false;
+
 
 
     /*

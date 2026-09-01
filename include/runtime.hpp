@@ -5,6 +5,17 @@
 
 /*
 ============================================================
+PROTON
+============================================================
+*/
+
+std::filesystem::path resolveProton(
+    const Context& ctx
+);
+
+
+/*
+============================================================
 GAME LAUNCH
 ============================================================
 
@@ -12,9 +23,8 @@ The public launch function is intentionally called:
 
     launchGame()
 
-NOT:
-
-    LaunchWine()
 */
 
-bool launchGame(Context& ctx);
+bool launchGame(
+    Context& ctx
+);

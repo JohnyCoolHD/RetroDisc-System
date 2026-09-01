@@ -8,18 +8,62 @@
 #include <thread>
 
 
-/*
-    ================================================================
-    CLEANUP FILESYSTEM
-    ================================================================
-*/
-
-bool cleanupFilesystem(
-    Context& ctx
-)
+bool cleanupFilesystem(Context& ctx)
 {
-    bool success =
-        true;
+    bool success = true;
+
+
+    /*
+        ============================================================
+        WAIT FOR WINE / PROTON
+        ============================================================
+
+        Proton may return before wineserver has finished writing
+        the registry.
+
+        The prefix overlay must therefore remain mounted until
+        wineserver has completely shut down.
+    */
+
+
+    if(ctx.prefixOverlayMounted)
+    {
+        const auto winePrefix =
+            ctx.prefixMergedDirectory;
+
+
+        if(
+            !winePrefix.empty() &&
+            std::filesystem::exists(winePrefix)
+        )
+        {
+            std::cout
+                << "Waiting for Wine server to finish..."
+                << std::endl;
+
+
+            const std::string command =
+                "WINEPREFIX=" +
+                shellQuote(
+                    winePrefix.string()
+                ) +
+                " wineserver -w";
+
+
+            if(!runCommand(command, true))
+            {
+                std::cerr
+                    << "Warning: wineserver did not exit cleanly."
+                    << std::endl;
+            }
+            else
+            {
+                std::cout
+                    << "Wine server finished."
+                    << std::endl;
+            }
+        }
+    }
 
 
     /*
@@ -27,6 +71,7 @@ bool cleanupFilesystem(
         GAME OVERLAY
         ============================================================
     */
+
 
     if(ctx.overlayMounted)
     {
@@ -44,9 +89,7 @@ bool cleanupFilesystem(
         if(!unmounted)
         {
             std::this_thread::sleep_for(
-                std::chrono::milliseconds(
-                    250
-                )
+                std::chrono::milliseconds(250)
             );
 
 
@@ -66,67 +109,130 @@ bool cleanupFilesystem(
                 << ctx.mergedDirectory
                 << std::endl;
 
-            success =
-                false;
+            success = false;
         }
         else
         {
-            ctx.overlayMounted =
-                false;
+            ctx.overlayMounted = false;
         }
     }
 
 
     /*
         ============================================================
-        TEMPORARY DIRECTORIES
+        WINE PREFIX OVERLAY
         ============================================================
     */
+
+
+    if(ctx.prefixOverlayMounted)
+    {
+        std::cout
+            << "Unmounting Wine prefix overlay..."
+            << std::endl;
+
+
+        bool unmounted =
+            unmountPath(
+                ctx.prefixMergedDirectory
+            );
+
+
+        if(!unmounted)
+        {
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(250)
+            );
+
+
+            unmounted =
+                unmountPath(
+                    ctx.prefixMergedDirectory
+                );
+        }
+
+
+        if(!unmounted)
+        {
+            std::cerr
+                << "Could not unmount Wine prefix overlay:"
+                << std::endl
+                << "    "
+                << ctx.prefixMergedDirectory
+                << std::endl;
+
+            success = false;
+        }
+        else
+        {
+            ctx.prefixOverlayMounted = false;
+        }
+    }
+
+
+    /*
+        ============================================================
+        TEMPORARY GAME DIRECTORIES
+        ============================================================
+    */
+
 
     if(!ctx.overlayMounted)
     {
-        if(!removeDirectory(
+        removeDirectory(
             ctx.mergedDirectory
-        ))
-        {
-            success =
-                false;
-        }
+        );
 
 
-        if(!removeDirectory(
-            ctx.overlayWorkDirectory.parent_path()
-        ))
-        {
-            success =
-                false;
-        }
+        removeDirectory(
+            ctx.overlayWorkDirectory
+        );
     }
 
 
     /*
         ============================================================
-        PREFIX
+        TEMPORARY PREFIX DIRECTORIES
         ============================================================
     */
 
-    ctx.prefixOverlayMounted =
-        false;
+
+    if(!ctx.prefixOverlayMounted)
+    {
+        removeDirectory(
+            ctx.prefixMergedDirectory
+        );
+
+
+        /*
+            IMPORTANT:
+
+            Only remove .prefix_work itself.
+
+            Never remove its parent directory because that parent
+            contains the persistent per-game pfx.
+        */
+
+
+        removeDirectory(
+            ctx.prefixWorkDirectory
+        );
+    }
+
+
+    if(ctx.overlayMounted)
+        success = false;
+
+
+    if(ctx.prefixOverlayMounted)
+        success = false;
 
 
     return success;
 }
 
 
-/*
-    ================================================================
-    GENERAL CLEANUP
-    ================================================================
-*/
-
-bool cleanup(
-    Context& ctx
-)
+bool cleanup(Context& ctx)
 {
     return cleanupFilesystem(ctx);
 }

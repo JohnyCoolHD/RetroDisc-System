@@ -1,357 +1,11 @@
 #include "registry_internal.hpp"
 
+#include "filesystem.hpp"
+
 #include <filesystem>
 #include <iostream>
-#include <system_error>
+#include <string>
 
-
-/*
-    ================================================================
-    COPY PREFIX ENTRY
-    ================================================================
-
-    Symlinks are copied as symlinks.
-
-    Their targets are NEVER followed.
-    ================================================================
-*/
-
-bool copyPrefixEntry(
-    const std::filesystem::path& source,
-    const std::filesystem::path& destination
-)
-{
-    std::error_code ec;
-
-
-    const auto status =
-        std::filesystem::symlink_status(
-            source,
-            ec
-        );
-
-
-    if(ec)
-    {
-        std::cerr
-            << "Could not inspect prefix entry:"
-            << std::endl
-            << "    "
-            << source
-            << std::endl
-            << "    "
-            << ec.message()
-            << std::endl;
-
-        return false;
-    }
-
-
-    /*
-        ============================================================
-        SYMLINK
-        ============================================================
-    */
-
-    if(std::filesystem::is_symlink(
-        status
-    ))
-    {
-        const auto target =
-            std::filesystem::read_symlink(
-                source,
-                ec
-            );
-
-
-        if(ec)
-        {
-            std::cerr
-                << "Could not read prefix symlink:"
-                << std::endl
-                << "    "
-                << source
-                << std::endl
-                << "    "
-                << ec.message()
-                << std::endl;
-
-            return false;
-        }
-
-
-        const auto destinationStatus =
-            std::filesystem::symlink_status(
-                destination,
-                ec
-            );
-
-
-        if(
-            !ec &&
-            (
-                std::filesystem::exists(
-                    destinationStatus
-                ) ||
-                std::filesystem::is_symlink(
-                    destinationStatus
-                )
-            )
-        )
-        {
-            ec.clear();
-
-            std::filesystem::remove(
-                destination,
-                ec
-            );
-
-
-            if(ec)
-            {
-                std::cerr
-                    << "Could not replace prefix symlink:"
-                    << std::endl
-                    << "    "
-                    << destination
-                    << std::endl
-                    << "    "
-                    << ec.message()
-                    << std::endl;
-
-                return false;
-            }
-        }
-
-
-        std::filesystem::create_symlink(
-            target,
-            destination,
-            ec
-        );
-
-
-        if(ec)
-        {
-            std::cerr
-                << "Could not create prefix symlink:"
-                << std::endl
-                << "    "
-                << destination
-                << std::endl
-                << "Target:"
-                << std::endl
-                << "    "
-                << target
-                << std::endl
-                << "Error:"
-                << std::endl
-                << "    "
-                << ec.message()
-                << std::endl;
-
-            return false;
-        }
-
-
-        return true;
-    }
-
-
-    /*
-        ============================================================
-        DIRECTORY
-        ============================================================
-    */
-
-    if(std::filesystem::is_directory(
-        status
-    ))
-    {
-        const auto destinationStatus =
-            std::filesystem::symlink_status(
-                destination,
-                ec
-            );
-
-
-        if(
-            !ec &&
-            std::filesystem::is_symlink(
-                destinationStatus
-            )
-        )
-        {
-            std::filesystem::remove(
-                destination,
-                ec
-            );
-
-
-            if(ec)
-            {
-                std::cerr
-                    << "Could not remove destination symlink:"
-                    << std::endl
-                    << "    "
-                    << destination
-                    << std::endl
-                    << "    "
-                    << ec.message()
-                    << std::endl;
-
-                return false;
-            }
-        }
-
-
-        if(
-            !std::filesystem::exists(
-                destination,
-                ec
-            )
-        )
-        {
-            ec.clear();
-
-            std::filesystem::create_directory(
-                destination,
-                ec
-            );
-
-
-            if(ec)
-            {
-                std::cerr
-                    << "Could not create prefix directory:"
-                    << std::endl
-                    << "    "
-                    << destination
-                    << std::endl
-                    << "    "
-                    << ec.message()
-                    << std::endl;
-
-                return false;
-            }
-        }
-
-
-        std::filesystem::directory_iterator iterator(
-            source,
-            std::filesystem::directory_options::
-                skip_permission_denied,
-            ec
-        );
-
-
-        if(ec)
-        {
-            std::cerr
-                << "Could not read prefix directory:"
-                << std::endl
-                << "    "
-                << source
-                << std::endl
-                << "    "
-                << ec.message()
-                << std::endl;
-
-            return false;
-        }
-
-
-        for(
-            const auto& entry :
-            iterator
-        )
-        {
-            const auto target =
-                destination /
-                entry.path().filename();
-
-
-            if(!copyPrefixEntry(
-                entry.path(),
-                target
-            ))
-            {
-                return false;
-            }
-        }
-
-
-        return true;
-    }
-
-
-    /*
-        ============================================================
-        REGULAR FILE
-        ============================================================
-    */
-
-    if(std::filesystem::is_regular_file(
-        status
-    ))
-    {
-        std::filesystem::copy_file(
-            source,
-            destination,
-            std::filesystem::copy_options::
-                overwrite_existing,
-            ec
-        );
-
-
-        if(ec)
-        {
-            std::cerr
-                << "Could not copy prefix file:"
-                << std::endl
-                << "    "
-                << source
-                << std::endl
-                << "to:"
-                << std::endl
-                << "    "
-                << destination
-                << std::endl
-                << "    "
-                << ec.message()
-                << std::endl;
-
-            return false;
-        }
-
-
-        return true;
-    }
-
-
-    /*
-        ============================================================
-        UNKNOWN TYPE
-        ============================================================
-    */
-
-    std::cerr
-        << "Unsupported filesystem entry in Wine prefix:"
-        << std::endl
-        << "    "
-        << source
-        << std::endl;
-
-
-    return false;
-}
-
-
-/*
-    ================================================================
-    COPY WINE PREFIX
-    ================================================================
-*/
 
 bool copyWinePrefix(
     const std::filesystem::path& source,
@@ -455,10 +109,9 @@ bool copyWinePrefix(
         << std::endl;
 
 
-    std::filesystem::directory_iterator iterator(
+    std::filesystem::recursive_directory_iterator iterator(
         source,
-        std::filesystem::directory_options::
-            skip_permission_denied,
+        std::filesystem::directory_options::skip_permission_denied,
         ec
     );
 
@@ -479,42 +132,438 @@ bool copyWinePrefix(
     }
 
 
-    for(
-        const auto& entry :
-        iterator
-    )
+    const auto end =
+        std::filesystem::recursive_directory_iterator();
+
+
+    while(iterator != end)
     {
-        const auto target =
-            destination /
-            entry.path().filename();
+        const auto sourcePath =
+            iterator->path();
 
 
-        if(!copyPrefixEntry(
-            entry.path(),
-            target
-        ))
+        /*
+            Build the destination path purely lexically.
+
+            We deliberately do not use std::filesystem::relative(),
+            because that function can resolve symbolic links.
+
+            The iterator path itself is already rooted at `source`.
+            Removing the source prefix keeps symbolic links intact.
+        */
+
+
+        std::string sourceString =
+            sourcePath.generic_string();
+
+
+        const std::string sourceRoot =
+            source.generic_string();
+
+
+        if(
+            sourceString.size() <=
+            sourceRoot.size()
+        )
         {
             std::cerr
-                << "Failed while copying:"
+                << "Could not determine relative Wine prefix path:"
                 << std::endl
                 << "    "
-                << entry.path()
+                << sourcePath
                 << std::endl;
 
             return false;
         }
-    }
 
 
-    if(!prefixLooksValid(
-        destination
-    ))
-    {
+        std::string relativeString =
+            sourceString.substr(
+                sourceRoot.size()
+            );
+
+
+        while(
+            !relativeString.empty() &&
+            relativeString.front() == '/'
+        )
+        {
+            relativeString.erase(
+                relativeString.begin()
+            );
+        }
+
+
+        if(relativeString.empty())
+        {
+            ++iterator;
+            continue;
+        }
+
+
+        const std::filesystem::path relativePath =
+            std::filesystem::path(
+                relativeString
+            );
+
+
+        /*
+            ============================================================
+            SKIP drive_c/windows
+            ============================================================
+        */
+
+
+        if(
+            relativeString ==
+                "drive_c/windows" ||
+            relativeString.rfind(
+                "drive_c/windows/",
+                0
+            ) == 0
+        )
+        {
+            std::cout
+                << "Skipping bundled Wine Windows directory:"
+                << std::endl
+                << "    "
+                << sourcePath
+                << std::endl;
+
+
+            std::error_code directoryError;
+
+
+            if(iterator->is_directory(
+                directoryError
+            ))
+            {
+                iterator.disable_recursion_pending();
+            }
+
+
+            ++iterator;
+
+            continue;
+        }
+
+
+        const auto target =
+            destination /
+            relativePath;
+
+
+        /*
+            ============================================================
+            SYMLINKS
+            ============================================================
+        */
+
+
+        std::error_code entryError;
+
+
+        if(iterator->is_symlink(
+            entryError
+        ))
+        {
+            if(entryError)
+            {
+                std::cerr
+                    << "Could not inspect Wine prefix symlink:"
+                    << std::endl
+                    << "    "
+                    << sourcePath
+                    << std::endl
+                    << "    "
+                    << entryError.message()
+                    << std::endl;
+
+                return false;
+            }
+
+
+            const auto linkTarget =
+                std::filesystem::read_symlink(
+                    sourcePath,
+                    entryError
+                );
+
+
+            if(entryError)
+            {
+                std::cerr
+                    << "Could not read Wine prefix symlink:"
+                    << std::endl
+                    << "    "
+                    << sourcePath
+                    << std::endl
+                    << "    "
+                    << entryError.message()
+                    << std::endl;
+
+                return false;
+            }
+
+
+            /*
+                Ignore links pointing into /home.
+
+                These are user-specific links from the bundled prefix.
+            */
+
+
+            if(linkTarget.is_absolute())
+            {
+                const auto normalizedTarget =
+                    linkTarget.lexically_normal();
+
+
+                if(
+                    normalizedTarget ==
+                        std::filesystem::path("/home") ||
+                    normalizedTarget.string().rfind(
+                        "/home/",
+                        0
+                    ) == 0
+                )
+                {
+                    std::cout
+                        << "Skipping personal Wine prefix symlink:"
+                        << std::endl
+                        << "    "
+                        << sourcePath
+                        << " -> "
+                        << linkTarget
+                        << std::endl;
+
+                    ++iterator;
+
+                    continue;
+                }
+            }
+
+
+            /*
+                Copy all other symlinks unchanged.
+
+                This includes:
+
+                    dosdevices/c:  -> ../drive_c
+                    dosdevices/z:  -> /
+                    dosdevices/com1 -> /dev/ttyS0
+                    etc.
+            */
+
+
+            std::filesystem::create_directories(
+                target.parent_path(),
+                entryError
+            );
+
+
+            if(entryError)
+            {
+                std::cerr
+                    << "Could not create Wine prefix symlink parent:"
+                    << std::endl
+                    << "    "
+                    << target.parent_path()
+                    << std::endl
+                    << "    "
+                    << entryError.message()
+                    << std::endl;
+
+                return false;
+            }
+
+
+            std::filesystem::create_symlink(
+                linkTarget,
+                target,
+                entryError
+            );
+
+
+            if(entryError)
+            {
+                std::cerr
+                    << "Could not create Wine prefix symlink:"
+                    << std::endl
+                    << "    "
+                    << target
+                    << std::endl
+                    << "    "
+                    << entryError.message()
+                    << std::endl;
+
+                return false;
+            }
+
+
+            ++iterator;
+
+            continue;
+        }
+
+
+        /*
+            ============================================================
+            DIRECTORIES
+            ============================================================
+        */
+
+
+        entryError.clear();
+
+
+        if(iterator->is_directory(
+            entryError
+        ))
+        {
+            if(entryError)
+            {
+                std::cerr
+                    << "Could not inspect Wine prefix directory:"
+                    << std::endl
+                    << "    "
+                    << sourcePath
+                    << std::endl
+                    << "    "
+                    << entryError.message()
+                    << std::endl;
+
+                return false;
+            }
+
+
+            std::filesystem::create_directories(
+                target,
+                entryError
+            );
+
+
+            if(entryError)
+            {
+                std::cerr
+                    << "Could not create Wine prefix directory:"
+                    << std::endl
+                    << "    "
+                    << target
+                    << std::endl
+                    << "    "
+                    << entryError.message()
+                    << std::endl;
+
+                return false;
+            }
+
+
+            ++iterator;
+
+            continue;
+        }
+
+
+        /*
+            ============================================================
+            REGULAR FILES
+            ============================================================
+        */
+
+
+        entryError.clear();
+
+
+        if(iterator->is_regular_file(
+            entryError
+        ))
+        {
+            if(entryError)
+            {
+                std::cerr
+                    << "Could not inspect Wine prefix file:"
+                    << std::endl
+                    << "    "
+                    << sourcePath
+                    << std::endl
+                    << "    "
+                    << entryError.message()
+                    << std::endl;
+
+                return false;
+            }
+
+
+            std::filesystem::create_directories(
+                target.parent_path(),
+                entryError
+            );
+
+
+            if(entryError)
+            {
+                std::cerr
+                    << "Could not create Wine prefix file parent:"
+                    << std::endl
+                    << "    "
+                    << target.parent_path()
+                    << std::endl
+                    << "    "
+                    << entryError.message()
+                    << std::endl;
+
+                return false;
+            }
+
+
+            std::filesystem::copy_file(
+                sourcePath,
+                target,
+                std::filesystem::copy_options::none,
+                entryError
+            );
+
+
+            if(entryError)
+            {
+                std::cerr
+                    << "Could not copy Wine prefix file:"
+                    << std::endl
+                    << "    "
+                    << sourcePath
+                    << std::endl
+                    << "to:"
+                    << std::endl
+                    << "    "
+                    << target
+                    << std::endl
+                    << "    "
+                    << entryError.message()
+                    << std::endl;
+
+                return false;
+            }
+
+
+            ++iterator;
+
+            continue;
+        }
+
+
+        /*
+            ============================================================
+            UNKNOWN FILE TYPE
+            ============================================================
+        */
+
+
         std::cerr
-            << "Copied Wine prefix is incomplete:"
+            << "Unsupported Wine prefix filesystem entry:"
             << std::endl
             << "    "
-            << destination
+            << sourcePath
             << std::endl;
 
         return false;

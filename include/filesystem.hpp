@@ -34,15 +34,27 @@ bool mountOverlay(
 
 
 /*
-    Prefix overlays are intentionally disabled.
+    ================================================================
+    WINE PREFIX OVERLAY
+    ================================================================
 
-    The Wine/Proton prefix is now persistent directly at:
+    lowerdir:
+        ~/.RetroDisc/pfx
 
+    upperdir:
         ~/Games/RetroDisc/<gameId>/pfx
 
-    or:
+        or:
 
         <datapath>/pfx
+
+    merged:
+        /tmp/RetroDisc-<gameId>/merged_prefix
+
+    workdir:
+        <game directory>/.prefix_work
+
+    The workdir must be on the same filesystem as the upperdir.
 */
 
 bool mountPrefixOverlay(

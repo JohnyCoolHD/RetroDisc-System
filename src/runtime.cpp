@@ -1550,15 +1550,35 @@ std::string buildWineCommand(
     const std::string&
 )
 {
-    if(ctx.prefixOverlayDirectory.empty())
+    if(ctx.prefixMergedDirectory.empty())
     {
         return {};
     }
 
     std::ostringstream command;
 
+    /*
+        ============================================================
+        PREFIX
+        ============================================================
+
+        Wine must always use the merged overlay.
+
+            LOWER:
+                ~/.RetroDisc/pfx
+
+            UPPER:
+                <game>/pfx
+
+            MERGED:
+                /tmp/RetroDisc-<gameId>/merged
+
+        The persistent upper directory must NEVER be used directly
+        as WINEPREFIX.
+    */
+
     const auto prefix =
-        ctx.prefixOverlayDirectory;
+        ctx.prefixMergedDirectory;
 
     const auto userDirectory =
         prefix /
@@ -1727,12 +1747,6 @@ std::string buildWineCommand(
 }
 
 
-/*
-    ================================================================
-    PROTON COMMAND
-    ================================================================
-*/
-
 std::string buildProtonCommand(
     const Context& ctx,
     const std::string&
@@ -1771,17 +1785,24 @@ std::string buildProtonCommand(
         return {};
     }
 
-    const auto prefix =
-        ctx.prefixOverlayDirectory;
 
-    if(prefix.empty())
+    /*
+        ============================================================
+        PREFIX
+        ============================================================
+    */
+
+    if(ctx.prefixMergedDirectory.empty())
     {
         std::cerr
-            << "Proton prefix is empty."
+            << "Proton merged prefix is empty."
             << std::endl;
 
         return {};
     }
+
+    const auto prefix =
+        ctx.prefixMergedDirectory;
 
 
     /*
@@ -1789,24 +1810,27 @@ std::string buildProtonCommand(
         PROTON COMPATIBILITY DATA
         ============================================================
 
-        Expected layout:
+        The compatibility-data directory is still the persistent
+        per-game directory:
 
-            crysis-2007/
-                pfx/
-                    drive_c/
-                    ...
+            <gameDirectory>/
+                pfx/       <- persistent overlay UPPER
+                ...
 
-        Proton receives:
+        Proton gets this directory through:
 
-            STEAM_COMPAT_DATA_PATH=crysis-2007
+            STEAM_COMPAT_DATA_PATH
 
-        and automatically uses:
+        But the actual Wine prefix is the mounted overlay:
 
-            crysis-2007/pfx
+            /tmp/RetroDisc-<gameId>/merged
+
+        Therefore WINEPREFIX explicitly points to the merged
+        overlay and MUST NOT point to the persistent upperdir.
     */
 
     const auto compatData =
-        prefix.parent_path();
+        ctx.prefixMergedDirectory.parent_path();
 
     if(compatData.empty())
     {
@@ -1818,8 +1842,12 @@ std::string buildProtonCommand(
         return {};
     }
 
-    const auto expectedPrefix =
-        compatData / "pfx";
+
+    /*
+        ============================================================
+        PREFIX VALIDATION
+        ============================================================
+    */
 
     std::error_code ec;
 
@@ -1835,26 +1863,7 @@ std::string buildProtonCommand(
     )
     {
         std::cerr
-            << "Wine prefix does not exist:"
-            << std::endl
-            << "    "
-            << prefix
-            << std::endl;
-
-        return {};
-    }
-
-    if(prefix != expectedPrefix)
-    {
-        std::cerr
-            << "Invalid Proton prefix layout."
-            << std::endl
-            << "Expected:"
-            << std::endl
-            << "    "
-            << expectedPrefix
-            << std::endl
-            << "Actual:"
+            << "Merged Wine prefix does not exist:"
             << std::endl
             << "    "
             << prefix
@@ -1887,16 +1896,24 @@ std::string buildProtonCommand(
         )
         << " && ";
 
+
     /*
-        Proton determines the prefix from:
+        ============================================================
+        WINE PREFIX
+        ============================================================
+
+        Proton must use the merged overlay as its actual prefix.
+
+        Do NOT let Proton fall back to:
 
             STEAM_COMPAT_DATA_PATH/pfx
-
-        Do not simultaneously set WINEPREFIX.
     */
 
     command
-        << "unset WINEPREFIX 2>/dev/null"
+        << "export WINEPREFIX="
+        << shellQuote(
+            prefix.string()
+        )
         << " && ";
 
 
@@ -1998,6 +2015,7 @@ std::string buildProtonCommand(
     const auto xdgCache =
         localAppData /
         "xdg-cache";
+
 
     command
         << "mkdir -p "
@@ -2193,8 +2211,13 @@ std::string buildProtonCommand(
     return command.str();
 }
 
+
 } // namespace
 
+std::filesystem::path resolveProton(const Context& ctx)
+{
+    return findProton(ctx);
+}
 
 /*
     =================================================================
@@ -2215,7 +2238,7 @@ bool launchGame(
         return false;
     }
 
-    if(ctx.prefixOverlayDirectory.empty())
+    if(ctx.prefixMergedDirectory.empty())
     {
         std::cerr
             << "Wine prefix path is empty."
@@ -2302,9 +2325,12 @@ bool launchGame(
         ============================================================
     */
 
+    const auto prefixDirectory =
+        ctx.prefixMergedDirectory;
+
     const auto prefixStatus =
         std::filesystem::symlink_status(
-            ctx.prefixOverlayDirectory,
+            prefixDirectory,
             ec
         );
 
@@ -2314,10 +2340,10 @@ bool launchGame(
     )
     {
         std::cerr
-            << "Wine/Proton shared prefix not found:"
+            << "Wine/Proton merged prefix not found:"
             << std::endl
             << "    "
-            << ctx.prefixOverlayDirectory
+            << prefixDirectory
             << std::endl;
 
         cleanupFilesystem(ctx);
@@ -2347,7 +2373,7 @@ bool launchGame(
     }
 
     /*
-        This is now deliberately performed for BOTH Wine and Proton.
+        This is deliberately performed for BOTH Wine and Proton.
 
         The canonical profile is always:
 
@@ -2387,7 +2413,7 @@ bool launchGame(
         << "Shared prefix:"
         << std::endl
         << "    "
-        << ctx.prefixOverlayDirectory
+        << prefixDirectory
         << std::endl;
 
     std::cout
@@ -2409,7 +2435,7 @@ bool launchGame(
         << std::endl
         << "    "
         << (
-            ctx.prefixOverlayDirectory /
+            prefixDirectory /
             "drive_c" /
             "users" /
             CANONICAL_WINDOWS_USER
@@ -2571,7 +2597,7 @@ bool launchGame(
         << "Shared Wine/Proton prefix:"
         << std::endl
         << "    "
-        << ctx.prefixOverlayDirectory
+        << prefixDirectory
         << std::endl;
 
     std::cout

@@ -52,3 +52,25 @@ bool replicateDirectoryStructure(
     const std::filesystem::path& source,
     const std::filesystem::path& destination
 );
+
+/*
+    ================================================================
+    PREFIX OVERLAY
+    ================================================================
+*/
+
+struct Context;
+
+bool mountPrefixOverlay(
+    Context& ctx
+);
+
+/*
+    ================================================================
+    RUNTIME
+    ================================================================
+*/
+
+std::filesystem::path findProton(
+    const Context& ctx
+);
