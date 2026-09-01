@@ -38,6 +38,43 @@ std::filesystem::path getGameConfigDirectory(
     const Context& ctx
 )
 {
+    /*
+        ============================================================
+        EXPLICIT DATAPATH
+        ============================================================
+
+        With --datapath the supplied directory is the
+        complete persistent game directory.
+
+        Example:
+
+            --datapath /media/MEMORYCARD/resident-evil-1
+
+        Config:
+
+            /media/MEMORYCARD/resident-evil-1/config.json
+    */
+
+    if(!ctx.dataPath.empty())
+    {
+        return ctx.dataPath;
+    }
+
+
+    /*
+        ============================================================
+        DEFAULT GAME DIRECTORY
+        ============================================================
+
+        Without --datapath:
+
+            ~/Games/RetroDisc/<gameId>/
+
+        Config:
+
+            ~/Games/RetroDisc/<gameId>/config.json
+    */
+
     const auto home =
         getHome();
 
@@ -48,9 +85,8 @@ std::filesystem::path getGameConfigDirectory(
 
     return
         home /
-        ".config" /
+        "Games" /
         "RetroDisc" /
-        "games" /
         ctx.gameId;
 }
 

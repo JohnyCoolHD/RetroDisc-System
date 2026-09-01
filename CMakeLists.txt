@@ -242,7 +242,7 @@ add_executable(
     src/main.cpp
 
     src/config/path.cpp
-    src/config/defaults.cpp
+    src/config/create_config.cpp
     src/config/manifest.cpp
     src/config/load.cpp
 
