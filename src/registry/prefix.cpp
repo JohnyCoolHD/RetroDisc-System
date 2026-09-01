@@ -6,6 +6,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 
@@ -1043,6 +1044,81 @@ bool prepareGamePrefix(
 
     /*
         ============================================================
+        PROTON COMPATDATA METADATA
+        ============================================================
+
+        Proton expects tracked_files to exist during its first
+        setup_prefix() call.
+
+        Steam normally creates/maintains the CompatData directory
+        before Proton is started. RetroDisc creates its own temporary
+        CompatData directory, therefore we provide the initial empty
+        tracked_files file here.
+
+        Proton will populate this file itself during setup_prefix().
+    */
+
+
+    const auto trackedFiles =
+        temporaryPrefixDirectory /
+        "tracked_files";
+
+
+    if(
+        !std::filesystem::exists(
+            trackedFiles,
+            ec
+        )
+    )
+    {
+        ec.clear();
+
+
+        std::ofstream trackedFile(
+            trackedFiles
+        );
+
+
+        if(!trackedFile)
+        {
+            std::cerr
+                << "Could not create Proton tracked_files:"
+                << std::endl
+                << "    "
+                << trackedFiles
+                << std::endl;
+
+            return false;
+        }
+
+
+        trackedFile.close();
+
+
+        if(!trackedFile)
+        {
+            std::cerr
+                << "Could not finalize Proton tracked_files:"
+                << std::endl
+                << "    "
+                << trackedFiles
+                << std::endl;
+
+            return false;
+        }
+
+
+        std::cout
+            << "Temporary Proton tracked_files created:"
+            << std::endl
+            << "    "
+            << trackedFiles
+            << std::endl;
+    }
+
+
+    /*
+        ============================================================
         PERSISTENT GAME PREFIX
         ============================================================
     */
@@ -1142,18 +1218,6 @@ bool prepareGamePrefix(
         ============================================================
         MOUNT PREFIX OVERLAY
         ============================================================
-
-        Lower:
-            ~/.RetroDisc/pfx
-
-        Upper:
-            ~/Games/RetroDisc/<gameId>/pfx
-
-        Work:
-            ~/Games/RetroDisc/<gameId>/.prefix_work
-
-        Merged:
-            /tmp/RetroDisc-<gameId>/merged_prefix
     */
 
 
