@@ -1050,12 +1050,10 @@ bool prepareGamePrefix(
         Proton expects tracked_files to exist during its first
         setup_prefix() call.
 
-        Steam normally creates/maintains the CompatData directory
-        before Proton is started. RetroDisc creates its own temporary
-        CompatData directory, therefore we provide the initial empty
-        tracked_files file here.
-
-        Proton will populate this file itself during setup_prefix().
+        Steam normally creates and maintains the CompatData
+        directory before Proton is started. RetroDisc creates its
+        own temporary CompatData directory, therefore we make sure
+        that tracked_files exists as a regular writable file.
     */
 
 
@@ -1064,22 +1062,121 @@ bool prepareGamePrefix(
         "tracked_files";
 
 
-    if(
-        !std::filesystem::exists(
+    /*
+        ------------------------------------------------------------
+        Remove an invalid tracked_files entry.
+        ------------------------------------------------------------
+
+        exists() follows symlinks, so check the filesystem entry
+        itself with symlink_status(). Proton needs a normal file.
+    */
+
+
+    ec.clear();
+
+
+    const auto trackedFilesStatus =
+        std::filesystem::symlink_status(
             trackedFiles,
             ec
-        )
-    )
+        );
+
+
+    if(ec)
+    {
+        /*
+            ENOENT is expected when the file does not exist.
+            Other errors are real failures.
+        */
+
+        if(ec != std::errc::no_such_file_or_directory)
+        {
+            std::cerr
+                << "Could not inspect Proton tracked_files:"
+                << std::endl
+                << "    "
+                << trackedFiles
+                << std::endl
+                << "    "
+                << ec.message()
+                << std::endl;
+
+            return false;
+        }
+
+        ec.clear();
+    }
+    else
+    {
+        const bool isRegularFile =
+            std::filesystem::is_regular_file(
+                trackedFilesStatus
+            );
+
+
+        if(!isRegularFile)
+        {
+            std::cout
+                << "Removing invalid Proton tracked_files entry:"
+                << std::endl
+                << "    "
+                << trackedFiles
+                << std::endl;
+
+
+            ec.clear();
+
+
+            std::filesystem::remove_all(
+                trackedFiles,
+                ec
+            );
+
+
+            if(ec)
+            {
+                std::cerr
+                    << "Could not remove invalid Proton tracked_files:"
+                    << std::endl
+                    << "    "
+                    << trackedFiles
+                    << std::endl
+                    << "    "
+                    << ec.message()
+                    << std::endl;
+
+                return false;
+            }
+        }
+    }
+
+
+    /*
+        ------------------------------------------------------------
+        Create tracked_files.
+        ------------------------------------------------------------
+    */
+
+
+    ec.clear();
+
+
+    if(!std::filesystem::exists(
+        trackedFiles,
+        ec
+    ))
     {
         ec.clear();
 
 
         std::ofstream trackedFile(
-            trackedFiles
+            trackedFiles,
+            std::ios::out |
+            std::ios::trunc
         );
 
 
-        if(!trackedFile)
+        if(!trackedFile.is_open())
         {
             std::cerr
                 << "Could not create Proton tracked_files:"
@@ -1092,20 +1189,25 @@ bool prepareGamePrefix(
         }
 
 
-        trackedFile.close();
+        trackedFile.flush();
 
 
-        if(!trackedFile)
+        if(!trackedFile.good())
         {
             std::cerr
-                << "Could not finalize Proton tracked_files:"
+                << "Could not write Proton tracked_files:"
                 << std::endl
                 << "    "
                 << trackedFiles
                 << std::endl;
 
+            trackedFile.close();
+
             return false;
         }
+
+
+        trackedFile.close();
 
 
         std::cout
@@ -1114,6 +1216,38 @@ bool prepareGamePrefix(
             << "    "
             << trackedFiles
             << std::endl;
+    }
+
+
+    /*
+        ------------------------------------------------------------
+        Final verification.
+        ------------------------------------------------------------
+    */
+
+
+    ec.clear();
+
+
+    if(
+        !std::filesystem::exists(
+            trackedFiles,
+            ec
+        ) ||
+        !std::filesystem::is_regular_file(
+            trackedFiles,
+            ec
+        )
+    )
+    {
+        std::cerr
+            << "Proton tracked_files is missing or invalid:"
+            << std::endl
+            << "    "
+            << trackedFiles
+            << std::endl;
+
+        return false;
     }
 
 
