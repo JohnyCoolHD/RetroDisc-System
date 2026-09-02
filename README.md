@@ -141,7 +141,7 @@ RetroDisc is designed to be storage independent.
 * Internal SSDs
 * External SSDs
 * USB flash drives
-* microSD cards
+* SD / microSD cards
 
 ## ✅ Suitable
 
