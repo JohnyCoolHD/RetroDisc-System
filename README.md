@@ -141,17 +141,16 @@ RetroDisc is designed to be storage independent.
 * Internal SSDs
 * External SSDs
 * USB flash drives
-* Internal HDDs
-* External HDDs
 * microSD cards
 
 ## ✅ Suitable
 
-* NAS storage
+* NAS storage (theoretically, don't have one to test it)
 * ISO images
 
 ## ⚠️ Possible, but not recommended
 
+* HDDs (could work great, it just depends on the game)
 * Blu-Ray
 * DVD-ROM
 * CD-ROM
