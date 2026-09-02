@@ -148,12 +148,12 @@ RetroDisc is designed to be storage independent.
 ## ✅ Suitable
 
 * NAS storage
-* DVD-ROM
-* Blu-ray
 * ISO images
 
 ## ⚠️ Possible, but not recommended
 
+* Blu-Ray
+* DVD-ROM
 * CD-ROM
 
 Loading times depend primarily on the performance of the underlying storage device and filesystem.
