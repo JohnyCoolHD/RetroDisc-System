@@ -130,9 +130,13 @@ Runtime-specific settings are stored separately in the persistent game-data dire
 
 ## `config.json`
 
-An optional release configuration containing the default runtime and compatibility settings for the game.
+An optional release configuration containing runtime and compatibility settings for the game.
 
-The release configuration acts as the template for the user's persistent configuration.
+The RetroDisc launcher contains a default configuration embedded in the launcher itself. A `config.json` placed next to the launcher is optional and can be used to provide or override the release configuration.
+
+If no external `config.json` is present, RetroDisc uses the configuration embedded in the launcher.
+
+The selected release configuration is used as the template for the user's persistent `config.json`.
 
 See [Game Configuration](#️-game-configuration)
 
