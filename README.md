@@ -61,8 +61,6 @@ A RetroDisc game is designed to run directly from portable storage.
 
 Games can be stored on USB drives, external SSDs, HDDs, optical media, SD cards or other supported storage devices. The launcher prepares the required runtime environment before starting the game.
 
-The Wine/Proton prefix can also be stored on writable portable media. This allows USB sticks and SD/microSD cards to function as portable game memory cards.
-
 The original game release normally does not need to be modified.
 
 If compatibility modifications are required, they are applied to the persistent writable game-data layer rather than the original release whenever possible.
@@ -73,7 +71,7 @@ The original game files are treated as the read-only base of the runtime filesys
 
 While the game is running, changes are written to a separate writable layer. This allows games to run from read-only media while still supporting saves, configuration files and other writable data.
 
-The original release therefore remains suitable for archival and redistribution.
+The original release therefore remains also suitable for archival.
 
 ## 💾 Portable Releases
 
