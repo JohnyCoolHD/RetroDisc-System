@@ -91,8 +91,8 @@ Every RetroDisc title follows a common structure:
 RetroDisc Game/
 ├── RetroDisc
 ├── manifest.json
-├── config.json (optional)
 ├── gamedata/
+├── config.json (optional)
 └── pfx/ (optional)
 ```
 
