@@ -20,7 +20,7 @@ A RetroDisc game behaves like a physical game release:
 * ▶️ Launch the included RetroDisc launcher.
 * 🎮 Play the game.
 
-A RetroDisc release contains the game files together with the information required to launch the game on a compatible Linux system:
+A RetroDisc release contains the information and files required to launch a Windows game on a compatible Linux system:
 
 * Game launcher
 * Game manifest
@@ -31,69 +31,82 @@ A RetroDisc release contains the game files together with the information requir
 
 RetroDisc does **not** replace Wine or Proton.
 
-Instead, RetroDisc provides a standardized way to package and launch Windows games while keeping the original game release separate from writable user data.
+Instead, it provides a standardized way to package and launch Windows games while keeping the original release separate from writable user data.
 
 ---
 
 # Features
 
-| Feature                | Description                                                                  |
-| ---------------------- | ---------------------------------------------------------------------------- |
-| 🎮 Plug & Play         | Launch games directly from portable storage                                  |
-| 💾 Portable Releases   | Games can be moved between drives and systems                                |
-| 🔒 Game Preservation   | Original game files remain untouched                                         |
-| 🐧 Linux Focus         | Built around Wine and Proton                                                 |
-| 📂 Standard Layout     | Every RetroDisc title follows the same basic structure                       |
-| 💾 Persistent Saves    | Writable game data is stored outside the original release                    |
-| 🔧 Writable Separation | Game modifications and runtime changes are separated from the original files |
-| 🧪 Temporary Runtime   | A temporary writable game filesystem is created during execution             |
-| 📦 Bundled Prefix      | A release can include a preconfigured Wine prefix                            |
+| Feature                    | Description                                                   |
+| -------------------------- | ------------------------------------------------------------- |
+| 🎮 Plug & Play             | Launch games directly from portable storage                   |
+| 💾 Portable Releases       | Move games between compatible drives and systems              |
+| 🔒 Game Preservation       | Keep original game files unchanged whenever possible          |
+| 📂 Standard Layout         | Every RetroDisc title follows the same basic structure        |
+| 💾 Persistent Saves        | Store writable game data separately from the original release |
+| 🔧 Writable Separation     | Separate runtime changes from the original game files         |
+| 🧪 Temporary Runtime       | Use a temporary writable filesystem while the game is running |
+| 📦 Bundled Prefix          | Optionally include a preconfigured Wine prefix                |
+| ⚙️ Automatic Configuration | Create persistent `config.json` automatically when required   |
 
 ---
 
-# Goals of RetroDisc
+# Goals
 
-RetroDisc is built around four simple ideas.
+RetroDisc is built around four principles.
 
-## 🎮 Portable Gaming
+## 🎮 Portable Games
 
-A RetroDisc game is designed to be played directly from portable storage.
+A RetroDisc game is designed to run directly from portable storage.
 
-Whether the game is stored on a USB drive, external SSD, HDD, optical media or another supported filesystem, the launcher prepares the required runtime environment before starting the game.
+Games can be stored on USB drives, external SSDs, HDDs, optical media, SD cards or other supported storage devices. The launcher prepares the required runtime environment before starting the game.
 
-The original game release does not need to be modified in order to play the game.
+The Wine/Proton prefix can also be stored on writable portable media. This allows USB sticks and SD/microSD cards to function as portable game memory cards.
 
----
+The original game release normally does not need to be modified.
+
+If compatibility modifications are required, they are applied to the persistent writable game-data layer rather than the original release whenever possible.
 
 ## 🔒 Game Preservation
 
-RetroDisc separates the original game release from writable data whenever possible.
+The original game files are treated as the read-only base of the runtime filesystem.
 
-The original game files are used as the read-only base of a temporary filesystem.
+While the game is running, changes are written to a separate writable layer. This allows games to run from read-only media while still supporting saves, configuration files and other writable data.
 
-Changes made while the game is running are written to the writable game-data layer instead of directly modifying the original release.
+The original release therefore remains suitable for archival and redistribution.
 
-This allows the original release to remain preserved while the user can still use saves, configuration files and other writable data.
+## 💾 Portable Releases
 
----
+A RetroDisc release contains the files required to identify and launch a game.
 
-## 📦 Portable Releases
+The release can be copied or moved between compatible storage devices without installing the original game into a traditional system-wide location.
 
-A RetroDisc title contains the files required to identify and launch the game.
-
-The release can be copied or moved between compatible storage devices without requiring the original game files to be installed into a traditional system-wide location.
-
-Persistent writable data is stored locally on the user's Linux system.
-
-This means that the original game media can remain portable and unchanged while user data follows the local machine.
+Persistent user data may either remain on the Linux system or be stored on portable writable media.
 
 ---
 
-# A Common Standard
+# RetroDisc Standard
 
-RetroDisc defines a consistent structure for games and their launch configuration.
+Every RetroDisc title follows a common structure:
 
-Each RetroDisc title contains a `manifest.json` file describing the game itself.
+```text
+RetroDisc Game/
+├── RetroDisc
+├── manifest.json
+├── config.json (optional)
+├── gamedata/
+└── pfx/ (optional)
+```
+
+## `RetroDisc`
+
+The RetroDisc launcher.
+
+It reads the game metadata and runtime configuration, prepares the runtime filesystem and compatibility environment, launches the game and performs cleanup afterwards.
+
+## `manifest.json`
+
+Contains the basic metadata required to identify and launch the game.
 
 Example:
 
@@ -108,147 +121,91 @@ Example:
 }
 ```
 
-Game-specific runtime settings are stored separately in:
+The manifest defines:
 
-```text
-~/.config/RetroDisc/games/<gameId>/config.json
-```
+* Game ID
+* Game name
+* Executable
+* Default runtime
 
-This configuration can define:
+Runtime-specific settings are stored separately in the persistent game-data directory.
 
-* Wine or Proton
-* launch arguments
-* environment variables
-* Proton version
-* Proton path
-* Windows version
-* graphics settings
-* synchronization settings
-* display settings
-* virtual desktop settings
-* DLL overrides
+## `config.json`
 
-Because the game metadata and runtime configuration follow a consistent structure, applications can discover and launch RetroDisc titles without requiring game-specific launcher implementations.
+An optional release configuration containing the default runtime and compatibility settings for the game.
 
----
+The release configuration acts as the template for the user's persistent configuration.
 
-# 💾 Supported Storage Media
+See [Game Configuration](#-game-configuration).
 
-RetroDisc is designed to be storage independent.
-
-## ⭐ Recommended
-
-* Internal SSDs
-* External SSDs
-* USB flash drives
-* SD / microSD cards
-
-## ✅ Suitable
-
-* NAS storage (theoretically, don't have one to test it)
-* ISO images
-
-## ⚠️ Possible, but not recommended
-
-* HDDs (could work great, it just depends on the game)
-* Blu-Ray
-* DVD-ROM
-* CD-ROM
-
-Loading times depend primarily on the performance of the underlying storage device and filesystem.
-
-The impact varies between games. Some games frequently access many small files, while others primarily load a smaller number of large files. Therefore, total game size alone does not determine loading performance.
-
----
-
-# 📁 Directory Layout
-
-A RetroDisc release follows this basic structure:
-
-```text
-RetroDisc Game/
-├── RetroDisc
-├── manifest.json
-├── gamedata/
-└── pfx/
-```
-
-### `RetroDisc`
-
-The RetroDisc launcher.
-
-It reads the manifest and configuration, prepares the filesystem and compatibility environment, launches the game and performs cleanup afterwards.
-
-### `manifest.json`
-
-Contains the basic game metadata:
-
-```text
-Game ID
-Game name
-Executable
-Default runtime
-```
-
-### `gamedata/`
+## `gamedata/`
 
 Contains the original game files.
 
-RetroDisc treats this directory as the original game release and does not directly write changes into it during normal execution.
+RetroDisc treats this directory as the original release and does not normally modify it during execution.
 
-### `pfx/`
+## `pfx/`
 
 An optional bundled Wine prefix.
 
-If a bundled prefix is present and no persistent prefix exists for the game, RetroDisc copies it to the user's local RetroDisc data directory.
+If included, it provides a preconfigured starting environment for the game. It is copied to the persistent game-data directory when no persistent prefix exists.
 
-The bundled prefix is never modified directly.
+The bundled prefix itself is never modified directly.
 
 ---
 
-# 🗂️ Persistent Game Data
+# 💾 Persistent Game Data
 
-Writable data is stored outside the original RetroDisc release.
+RetroDisc stores writable game data separately from the original release.
 
-The persistent directory is:
+By default, the persistent directory is:
 
 ```text
 ~/Games/RetroDisc/<gameId>/
 ```
 
-A typical installation looks like:
+When `--datapath` is supplied, the specified directory is used instead:
+
+```text
+<datapath>/
+```
+
+A typical persistent directory looks like:
 
 ```text
 ~/Games/RetroDisc/
 └── <gameId>/
+    ├── config.json
     ├── gamedata/
     └── pfx/
 ```
 
-The Wine/Proton prefix is stored at:
+Persistent data may contain:
 
-```text
-~/Games/RetroDisc/<gameId>/pfx/
-```
+* Runtime configuration
+* Wine/Proton prefix
+* Registry changes
+* Windows user profile
+* Save data
+* Game configuration files
+* Persistent game modifications
 
-The prefix is persistent and is **not recreated on every launch**.
+The persistent directory is reused between launches.
 
-If a complete persistent prefix already exists, RetroDisc reuses it.
-
-If no persistent prefix exists, RetroDisc can copy a bundled `pfx/` from the RetroDisc release.
+RetroDisc does not recreate persistent data on every launch.
 
 ---
 
-# Writable Game Files
+# 🔧 Writable Game Data
 
-RetroDisc separates the original game files from writable runtime data.
+The original `gamedata/` is used as a read-only base for a temporary `fuse-overlayfs` filesystem.
 
 Conceptually:
 
 ```text
 RetroDisc Release
         │
-        │ read-only base
+        │ read-only
         ▼
    gamedata/
         │
@@ -261,13 +218,12 @@ RetroDisc Release
         └── runtime modifications
         │
         ▼
- Persistent Game Data
+ Persistent Writable Layer
  ~/Games/RetroDisc/<gameId>/
+        │
+        ├── gamedata/
+        └── ...
 ```
-
-The game is launched through a temporary `fuse-overlayfs` filesystem.
-
-The original `gamedata/` directory remains untouched.
 
 The writable upper layer is stored in:
 
@@ -275,177 +231,61 @@ The writable upper layer is stored in:
 ~/Games/RetroDisc/<gameId>/gamedata/
 ```
 
-Temporary overlay directories are created under `/tmp` and removed after the game exits.
-
----
-
-# 👤 Wine User Profile
-
-RetroDisc keeps the persistent Wine profile independent from the Linux user's actual username.
-
-The persistent Wine user is:
+or:
 
 ```text
-RetroDisc
+<datapath>/gamedata/
 ```
 
-At runtime, RetroDisc determines the current Linux/Steam user and creates a temporary symbolic link inside the Wine prefix:
+Temporary overlay directories are created under `/tmp` and removed after the game exits whenever cleanup succeeds.
 
-```text
-drive_c/users/<runtime-user>
-        └──> RetroDisc
-```
-
-This allows Windows applications to see their expected runtime username while the actual persistent data remains inside the `RetroDisc` profile.
-
-The temporary user link is removed after the game exits.
-
----
-
-# ⚙️ Requirements
-
-RetroDisc itself is designed to require only a small number of runtime dependencies.
-
-### Required
-
-* Wine **or** Proton, depending on the game
-* `fuse-overlayfs`
-* `fuse3` / `fusermount3`
-* `findmnt` from `util-linux`
-
-On Arch Linux, the required system packages are typically:
-
-```bash
-sudo pacman -S --needed fuse-overlayfs fuse3 util-linux
-```
-
-For Wine games:
-
-```bash
-sudo pacman -S --needed wine
-```
-
-For Proton games:
-
-```bash
-sudo pacman -S --needed steam
-```
-
-The RetroDisc launcher itself does **not** require CMake, GCC or the `nlohmann-json` development package at runtime.
-
-### Optional Components
-
-Depending on the individual game:
-
-* Proton
-* Vulkan drivers
-* DXVK
-* Gamescope
-* Discord
-
-Not every RetroDisc title requires every optional component.
-
-Discord integration is optional. If Discord is unavailable, RetroDisc continues launching the game normally.
-
----
-
-# 🔄 How RetroDisc Works
-
-When a RetroDisc game is launched, RetroDisc performs the following steps:
-
-1. Determines the RetroDisc release directory.
-2. Loads `manifest.json`.
-3. Loads the user's game configuration.
-4. Determines the selected Wine or Proton runtime.
-5. Creates or reuses the persistent game directory.
-6. Creates a temporary `fuse-overlayfs` filesystem for `gamedata/`.
-7. Verifies that the configured executable is available through the overlay.
-8. Creates the temporary runtime Wine user link.
-9. Applies environment variables and compatibility settings.
-10. Launches the game using Wine or Proton.
-11. Removes the temporary runtime user link.
-12. Unmounts the temporary filesystem.
-13. Removes temporary files.
-
-The original game release remains unchanged throughout the process.
-
----
-
-# Persistent and Temporary Data
-
-RetroDisc intentionally separates persistent data from temporary runtime data.
-
-### Persistent
-
-Stored under:
-
-```text
-~/Games/RetroDisc/<gameId>/
-```
-
-Includes:
-
-* Wine/Proton prefix
-* Registry changes
-* Windows user profile
-* Save data
-* Configuration data
-* Persistent game modifications
-
-### Temporary
-
-Stored under `/tmp` during execution:
+Typical temporary paths are:
 
 ```text
 /tmp/RetroDisc_<pid>/
 /tmp/RetroDiscWork_<pid>/
 ```
 
-Includes:
-
-* Temporary overlay mount
-* Overlay work directory
-* Temporary runtime user link
-
-Temporary data is removed after the game exits whenever cleanup succeeds.
+If temporary directories cannot be removed during shutdown, they are expected to disappear when the system cleans `/tmp`, typically after a restart.
 
 ---
 
-# Wine / Proton
+# ⚙️ Game Configuration
 
-RetroDisc supports both Wine and Proton.
+Each game has a persistent `config.json`.
 
-## Wine
+By default:
 
-For:
-
-```json
-{
-    "runtime": "wine"
-}
+```text
+~/Games/RetroDisc/<gameId>/config.json
 ```
 
-RetroDisc launches the configured executable using Wine and the persistent game prefix.
+With `--datapath`:
 
-## Proton
-
-For:
-
-```json
-{
-    "runtime": "proton"
-}
+```text
+<datapath>/config.json
 ```
 
-RetroDisc locates the configured Proton version through the user's Steam installation and uses the same persistent game prefix.
+If the persistent configuration does not exist when the game is started, RetroDisc creates it from the configuration embedded in the RetroDisc release.
 
-A specific Proton installation can also be selected through the configuration.
+Once created, the configuration is persistent.
 
----
+RetroDisc reuses the existing configuration on subsequent launches and does not recreate or overwrite it automatically.
 
-# Example Configuration
+The generated configuration provides default settings but does **not** guarantee that the game will run correctly.
 
-A minimal game configuration can look like:
+Depending on the game, additional compatibility settings may be required, such as:
+
+* DLL overrides
+* Windows version
+* Graphics settings
+* Synchronization settings
+* Custom launch arguments
+* Other Wine/Proton settings
+
+The persistent `config.json` can be edited manually.
+
+### Example
 
 ```json
 {
@@ -479,24 +319,182 @@ A minimal game configuration can look like:
 }
 ```
 
-The configuration is game-specific and can be extended without modifying the original game files.
+---
+
+# 👤 Wine / Proton User Profile
+
+RetroDisc keeps the persistent Wine/Proton user profile independent of the actual Linux username.
+
+The persistent Windows user is:
+
+```text
+RetroDisc
+```
+
+At runtime, RetroDisc determines the current Linux/Steam user and creates a temporary symbolic link inside the Wine prefix:
+
+```text
+drive_c/users/<runtime-user>
+        └──> RetroDisc
+```
+
+This allows Windows applications to see the expected runtime username while persistent data remains inside the `RetroDisc` profile.
+
+The temporary link is removed after the game exits.
 
 ---
 
-# 🔒 Safety and Preservation
+# 🧪 Runtime Environment
 
-RetroDisc is designed around the principle that the original game release should remain untouched.
+RetroDisc supports both Wine and Proton.
 
-The launcher therefore:
+## Wine
 
-* does not use the original game directory as a writable Wine prefix
-* does not directly modify the original `gamedata/`
-* creates a temporary writable overlay
-* stores the persistent Wine/Proton prefix separately
-* reuses existing persistent prefixes instead of overwriting them
-* refuses to overwrite an incomplete persistent prefix automatically
+For:
 
-This makes the original RetroDisc release suitable for archival and redistribution.
+```json
+{
+    "runtime": "wine"
+}
+```
+
+RetroDisc launches the configured executable using Wine and the persistent game prefix.
+
+## Proton
+
+For:
+
+```json
+{
+    "runtime": "proton"
+}
+```
+
+RetroDisc locates the configured Proton installation through Steam and uses the persistent game prefix.
+
+A specific Proton installation can be selected through the game configuration.
+
+RetroDisc therefore acts as the packaging and runtime-preparation layer rather than replacing Wine or Proton.
+
+---
+
+# 🔄 Launch Process
+
+When a RetroDisc game is launched, the launcher:
+
+1. Determines the RetroDisc release directory.
+2. Loads `manifest.json`.
+3. Determines the persistent game-data directory.
+4. Loads the persistent `config.json`.
+5. Creates `config.json` from the release configuration if necessary.
+6. Selects the configured Wine or Proton runtime.
+7. Creates or reuses the persistent game-data directory.
+8. Creates a temporary `fuse-overlayfs` filesystem for `gamedata/`.
+9. Verifies that the configured executable is available through the overlay.
+10. Creates the temporary runtime Wine user link.
+11. Applies environment variables and compatibility settings.
+12. Launches the game.
+13. Removes the temporary runtime user link.
+14. Unmounts the temporary filesystem.
+15. Removes temporary files.
+
+The original game release remains unchanged whenever the game does not require direct modification.
+
+---
+
+# 💿 Supported Storage Media
+
+RetroDisc is storage independent.
+
+### ⭐ Recommended
+
+* Internal SSDs
+* External SSDs
+* USB flash drives
+* SD / microSD cards
+
+### ✅ Suitable
+
+* NAS storage *(theoretically; currently untested)*
+* ISO images
+
+### ⚠️ Possible, but not always recommended
+
+* HDDs
+* Blu-Ray
+* DVD-ROM
+* CD-ROM
+
+Loading performance depends primarily on the underlying storage device and filesystem.
+
+The impact varies by game. Some games frequently access many small files, while others primarily load a smaller number of large files.
+
+Therefore, total game size alone does not determine loading performance.
+
+---
+
+# ⚙️ Requirements
+
+RetroDisc itself is designed to have only a small number of system dependencies.
+
+### Required
+
+* Wine **or** Proton, depending on the game
+* `fuse-overlayfs`
+* `fuse3` / `fusermount3`
+* `findmnt` from `util-linux`
+
+On Arch Linux:
+
+```bash
+sudo pacman -S --needed fuse-overlayfs fuse3 util-linux
+```
+
+For Wine:
+
+```bash
+sudo pacman -S --needed wine
+```
+
+For Proton:
+
+```bash
+sudo pacman -S --needed steam
+```
+
+The RetroDisc launcher itself does **not** require CMake, GCC or the `nlohmann-json` development package at runtime.
+
+### Optional Components
+
+Individual games may additionally require:
+
+* Proton
+* Vulkan drivers
+* DXVK
+* Gamescope
+* Discord
+
+Not every RetroDisc title requires every optional component.
+
+Discord integration is optional. If Discord is unavailable, RetroDisc continues launching the game normally.
+
+---
+
+# 🔒 Persistence and Safety
+
+RetroDisc follows these rules for persistent data:
+
+* Original `gamedata/` is not used as a writable Wine prefix.
+* Original game files are not directly modified during normal execution.
+* Runtime changes are written through the temporary overlay.
+* Persistent writable data is stored separately.
+* Persistent configurations are reused instead of recreated.
+* Persistent Wine/Proton prefixes are reused between launches.
+* A bundled prefix is copied only when no persistent prefix exists.
+* An existing persistent prefix is never automatically overwritten.
+* An incomplete persistent prefix is not automatically replaced.
+
+This separation allows the original RetroDisc release to remain portable, reproducible and suitable for preservation.
 
 ---
 
@@ -505,3 +503,4 @@ This makes the original RetroDisc release suitable for archival and redistributi
 RetroDisc is licensed under the GNU General Public License v3.0 (GPL-3.0).
 
 Everyone is free to use, study, modify and redistribute RetroDisc under the terms of the GPL.
+
