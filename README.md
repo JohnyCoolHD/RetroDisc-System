@@ -134,7 +134,7 @@ An optional release configuration containing the default runtime and compatibili
 
 The release configuration acts as the template for the user's persistent configuration.
 
-See [Game Configuration](#-game-configuration).
+See [Game Configuration](#️-game-configuration)
 
 ## `gamedata/`
 
