@@ -4,6 +4,7 @@
 #include "runtime.hpp"
 #include "../filesystem/filesystem_internal.hpp"
 
+#include <unistd.h>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -908,12 +909,13 @@ bool prepareGamePrefix(
 
 
     const auto temporaryPrefixDirectory =
-        std::filesystem::path(
-            "/tmp"
-        ) /
+        std::filesystem::path("/tmp") /
         (
-            std::string("RetroDisc-") +
-            ctx.gameId
+            ctx.gameId +
+            "-" +
+            std::to_string(
+                getpid()
+            )
         );
 
 
