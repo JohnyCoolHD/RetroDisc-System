@@ -256,6 +256,7 @@ add_executable(
     src/registry/validation.cpp
     src/registry/copy.cpp
     src/registry/prefix.cpp
+    src/registry/prefix_sanitize.cpp
 
     src/runtime.cpp
     src/discord.cpp

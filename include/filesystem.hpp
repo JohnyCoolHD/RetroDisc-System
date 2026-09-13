@@ -39,14 +39,21 @@ bool mountOverlay(
     ================================================================
 
     lowerdir:
-        ~/.RetroDisc/pfx
+        ~/.RetroDisc/prefix/<proton|wine>/<version>/
+
+        A complete, reusable base prefix/compat-data tree, kept
+        separately per runtime AND per Proton/Wine build/version.
 
     upperdir:
-        ~/Games/RetroDisc/<gameId>/pfx
+        ~/Games/RetroDisc/<gameId>/prefix
 
         or:
 
-        <datapath>/pfx
+        <datapath>/prefix
+
+        Contains only the actual changes made to the prefix
+        (e.g. save files under AppData), since the base prefix
+        already lives in the lowerdir.
 
     merged:
         /tmp/RetroDisc-<gameId>/merged_prefix

@@ -396,24 +396,116 @@ bool mountPrefixOverlay(
         true;
 
 
-    const auto driveC =
+    /*
+        Wine and Proton:
+
+            merged_prefix/
+            └── pfx/
+                ├── drive_c/
+                ├── dosdevices/
+                ├── system.reg
+                └── user.reg
+    */
+
+    const auto prefixRoot =
         ctx.prefixMergedDirectory /
+        "pfx";
+
+
+    const auto driveC =
+        prefixRoot /
         "drive_c";
 
-
     const auto dosDevices =
-        ctx.prefixMergedDirectory /
+        prefixRoot /
         "dosdevices";
 
-
     const auto systemReg =
-        ctx.prefixMergedDirectory /
+        prefixRoot /
         "system.reg";
 
-
     const auto userReg =
-        ctx.prefixMergedDirectory /
+        prefixRoot /
         "user.reg";
+
+
+    /*
+        Temporary diagnostics.
+
+        These checks happen while the overlay is still mounted,
+        so we can see exactly what fuse-overlayfs produced.
+    */
+
+    std::cout
+        << "Prefix overlay validation:"
+        << std::endl;
+
+    std::cout
+        << "    Prefix root:"
+        << std::endl
+        << "        "
+        << prefixRoot
+        << std::endl;
+
+    std::cout
+        << "    drive_c:"
+        << std::endl
+        << "        "
+        << driveC
+        << " -> "
+        << (
+            std::filesystem::is_directory(
+                driveC
+            )
+            ? "OK"
+            : "MISSING"
+        )
+        << std::endl;
+
+    std::cout
+        << "    dosdevices:"
+        << std::endl
+        << "        "
+        << dosDevices
+        << " -> "
+        << (
+            std::filesystem::is_directory(
+                dosDevices
+            )
+            ? "OK"
+            : "MISSING"
+        )
+        << std::endl;
+
+    std::cout
+        << "    system.reg:"
+        << std::endl
+        << "        "
+        << systemReg
+        << " -> "
+        << (
+            std::filesystem::is_regular_file(
+                systemReg
+            )
+            ? "OK"
+            : "MISSING"
+        )
+        << std::endl;
+
+    std::cout
+        << "    user.reg:"
+        << std::endl
+        << "        "
+        << userReg
+        << " -> "
+        << (
+            std::filesystem::is_regular_file(
+                userReg
+            )
+            ? "OK"
+            : "MISSING"
+        )
+        << std::endl;
 
 
     const bool validPrefix =
@@ -462,7 +554,7 @@ bool mountPrefixOverlay(
         << "Wine prefix:"
         << std::endl
         << "    "
-        << ctx.prefixMergedDirectory
+        << prefixRoot
         << std::endl;
 
 

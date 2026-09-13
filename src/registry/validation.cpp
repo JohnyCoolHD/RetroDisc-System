@@ -94,23 +94,24 @@ bool prefixLooksValid(
     }
 
 
-    const auto driveC =
+    const auto pfxDirectory =
         prefix /
+        "pfx";
+
+    const auto driveC =
+        pfxDirectory /
         "drive_c";
 
-
     const auto dosDevices =
-        prefix /
+        pfxDirectory /
         "dosdevices";
 
-
     const auto systemReg =
-        prefix /
+        pfxDirectory /
         "system.reg";
 
-
     const auto userReg =
-        prefix /
+        pfxDirectory /
         "user.reg";
 
 
@@ -144,6 +145,46 @@ bool prefixLooksValid(
     {
         return false;
     }
+
+
+    return true;
+}
+
+bool winePrefixLooksValid(
+    const std::filesystem::path& prefix
+)
+{
+    if(!directoryExists(prefix))
+        return false;
+
+
+    const auto pfxDirectory =
+        prefix / "pfx";
+
+    const auto driveC =
+        pfxDirectory / "drive_c";
+
+    const auto dosDevices =
+        pfxDirectory / "dosdevices";
+
+    const auto systemReg =
+        pfxDirectory / "system.reg";
+
+    const auto userReg =
+        pfxDirectory / "user.reg";
+
+
+    if(!directoryExists(driveC))
+        return false;
+
+    if(!directoryExists(dosDevices))
+        return false;
+
+    if(!regularFileExists(systemReg))
+        return false;
+
+    if(!regularFileExists(userReg))
+        return false;
 
 
     return true;

@@ -860,6 +860,116 @@ bool ensureDirectory(
     ================================================================
 */
 
+/*
+    ================================================================
+    ENSURE LEGACY COMPAT REDIRECT
+    ================================================================
+
+    Proton hardcodes its own migration of Windows-XP-style shell
+    folder paths for the "steamuser" account (see Proton's
+    migrate_user_paths()):
+
+        Local Settings/Application Data -> ../AppData/Local
+        Application Data                -> ./AppData/Roaming
+        My Documents                    -> ./Documents
+
+    Proton's own implementation of this is not robust against the
+    parent directory being missing: if e.g. "Local Settings" does
+    not already exist, Proton's internal makedirs() call fails
+    (Proton silently swallows that OSError) and the following
+    os.symlink() call then crashes with FileNotFoundError, aborting
+    the whole launch.
+
+    Since RetroDisc always redirects "steamuser" onto the canonical
+    "RetroDisc" profile, and that profile is a fresh one that no
+    wineboot has ever XP-initialized, these legacy paths never
+    existed on it. RetroDisc therefore creates them itself so that
+    Proton's own migration finds everything already in place and
+    becomes a safe no-op instead of a crash source.
+*/
+
+bool ensureLegacyCompatRedirect(
+    const std::filesystem::path& canonicalUser,
+    const std::filesystem::path& relativeLegacyPath,
+    const std::filesystem::path& linkTarget
+)
+{
+    const auto legacyPath =
+        canonicalUser /
+        relativeLegacyPath;
+
+    if(!ensureDirectory(legacyPath.parent_path()))
+    {
+        std::cerr
+            << "Could not prepare legacy compat parent directory:"
+            << std::endl
+            << "    "
+            << legacyPath.parent_path()
+            << std::endl;
+
+        return false;
+    }
+
+    std::error_code ec;
+
+    const auto status =
+        std::filesystem::symlink_status(
+            legacyPath,
+            ec
+        );
+
+    if(
+        !ec &&
+        status.type() !=
+            std::filesystem::file_type::not_found
+    )
+    {
+        /*
+            Something is already there (a correct redirect from an
+            earlier launch, or pre-existing real data). Never
+            overwrite existing entries here; only fill the gap when
+            nothing exists yet.
+        */
+
+        return true;
+    }
+
+    ec.clear();
+
+    std::filesystem::create_directory_symlink(
+        linkTarget,
+        legacyPath,
+        ec
+    );
+
+    if(
+        ec &&
+        ec !=
+            std::make_error_code(
+                std::errc::file_exists
+            )
+    )
+    {
+        std::cerr
+            << "Could not create legacy compat redirect:"
+            << std::endl
+            << "    "
+            << legacyPath
+            << std::endl
+            << " -> "
+            << linkTarget
+            << std::endl
+            << "    "
+            << ec.message()
+            << std::endl;
+
+        return false;
+    }
+
+    return true;
+}
+
+
 bool prepareCanonicalUserDirectory(
     const std::filesystem::path& usersDirectory
 )
@@ -941,9 +1051,567 @@ bool prepareCanonicalUserDirectory(
         }
     }
 
+    /*
+        ============================================================
+        LEGACY (WINDOWS-XP-STYLE) COMPAT REDIRECTS
+        ============================================================
+
+        Required so Proton's own "steamuser" migration never has to
+        create these itself. See ensureLegacyCompatRedirect() above.
+    */
+
+    if(!ensureLegacyCompatRedirect(
+        canonicalUser,
+        std::filesystem::path("Local Settings") / "Application Data",
+        "../AppData/Local"
+    ))
+    {
+        return false;
+    }
+
+    if(!ensureLegacyCompatRedirect(
+        canonicalUser,
+        "Application Data",
+        "AppData/Roaming"
+    ))
+    {
+        return false;
+    }
+
+    if(!ensureLegacyCompatRedirect(
+        canonicalUser,
+        "My Documents",
+        "Documents"
+    ))
+    {
+        return false;
+    }
+
     return true;
 }
 
+
+/*
+    ================================================================
+    MIGRATE AND REDIRECT LEGACY WINDOWS USER
+    ================================================================
+
+    RetroDisc always launches Wine/Proton with WINEUSERNAME/
+    USERPROFILE/etc. pointed at the canonical "RetroDisc" profile.
+    That is enough for plain Wine, but Proton does NOT reliably
+    honor it: Proton hardcodes its own internal Windows user to
+    "steamuser" for a range of its own internal bookkeeping and for
+    some Win32 known-folder resolution used by many games (including
+    Unity's Application.persistentDataPath, which is exactly what
+    Hollow Knight uses for its save files under
+    "AppData/LocalLow/Team Cherry/Hollow Knight"). Stock Wine can
+    similarly fall back to the actual Unix account name in some
+    circumstances instead of the requested WINEUSERNAME.
+
+    Concretely, this means saves can end up physically written under
+        drive_c/users/steamuser/...      (observed under Proton)
+    or
+        drive_c/users/<unix-username>/...  (observed under Wine)
+    instead of the intended, persisted
+        drive_c/users/RetroDisc/...
+
+    Both "steamuser" and the actual Unix account name already exist
+    as real directories in the immutable base prefix (created by the
+    base's own "wineboot" in initializeGlobalPrefix()), so they are
+    visible in every merged overlay regardless of which game/datapath
+    is running. Any writes under them therefore still land in THIS
+    game's persistent upper -- they are not lost -- but they end up
+    at a different path than the canonical "RetroDisc" profile, so a
+    later launch under a different runtime (which may resolve the
+    legacy name differently) appears to have "lost" the save.
+
+    The fix: make each known legacy name a symlink to "RetroDisc",
+    migrating any real content already sitting there (e.g. from
+    earlier launches before this fix existed, or from this exact
+    kind of runtime switch) into the canonical profile first so
+    nothing is silently discarded.
+*/
+
+bool migrateAndSymlinkLegacyUser(
+    const std::filesystem::path& usersDirectory,
+    const std::filesystem::path& persistentUsersDirectory,
+    const std::filesystem::path& sourceUsersDirectory,
+    const std::string& legacyName
+)
+{
+    if(
+        legacyName.empty() ||
+        legacyName == CANONICAL_WINDOWS_USER
+    )
+    {
+        return true;
+    }
+
+    /*
+        The merged users directory is used only to determine what
+        Wine currently exposes.
+
+        Migration itself is NEVER performed through the FUSE mount.
+    */
+    const auto legacyPath =
+        usersDirectory /
+        legacyName;
+
+    const auto sourceLegacyPath =
+        sourceUsersDirectory /
+        legacyName;
+
+    const auto persistentLegacyPath =
+        persistentUsersDirectory /
+        legacyName;
+
+    const auto persistentCanonicalPath =
+        persistentUsersDirectory /
+        CANONICAL_WINDOWS_USER;
+
+    std::error_code ec;
+
+    /*
+        ============================================================
+        INSPECT MERGED LEGACY PROFILE
+        ============================================================
+    */
+
+    const auto status =
+        std::filesystem::symlink_status(
+            legacyPath,
+            ec
+        );
+
+    if(
+        status.type() ==
+        std::filesystem::file_type::not_found
+    )
+    {
+        ec.clear();
+    }
+    else if(ec)
+    {
+        std::cerr
+            << "Could not inspect legacy Windows user directory:"
+            << std::endl
+            << "    "
+            << legacyPath
+            << std::endl
+            << "    "
+            << ec.message()
+            << std::endl;
+
+        return false;
+    }
+
+    /*
+        ============================================================
+        NOTHING IN MERGED PREFIX
+        ============================================================
+    */
+
+    if(
+        status.type() ==
+        std::filesystem::file_type::not_found
+    )
+    {
+        std::error_code upperEc;
+
+        const auto upperStatus =
+            std::filesystem::symlink_status(
+                persistentLegacyPath,
+                upperEc
+            );
+
+        if(
+            upperEc &&
+            upperEc !=
+                std::make_error_code(
+                    std::errc::no_such_file_or_directory
+                )
+        )
+        {
+            std::cerr
+                << "Could not inspect persistent legacy"
+                << " Windows user:"
+                << std::endl
+                << "    "
+                << persistentLegacyPath
+                << std::endl
+                << "    "
+                << upperEc.message()
+                << std::endl;
+
+            return false;
+        }
+
+        if(
+            !upperEc &&
+            upperStatus.type() !=
+                std::filesystem::file_type::not_found
+        )
+        {
+            upperEc.clear();
+
+            std::filesystem::remove_all(
+                persistentLegacyPath,
+                upperEc
+            );
+
+            if(upperEc)
+            {
+                std::cerr
+                    << "Could not remove stale persistent"
+                    << " legacy Windows user:"
+                    << std::endl
+                    << "    "
+                    << persistentLegacyPath
+                    << std::endl
+                    << "    "
+                    << upperEc.message()
+                    << std::endl;
+
+                return false;
+            }
+        }
+
+        upperEc.clear();
+
+        std::filesystem::create_directory_symlink(
+            CANONICAL_WINDOWS_USER,
+            persistentLegacyPath,
+            upperEc
+        );
+
+        if(upperEc)
+        {
+            std::cerr
+                << "Could not create legacy Windows user redirect:"
+                << std::endl
+                << "    "
+                << persistentLegacyPath
+                << std::endl
+                << "    "
+                << upperEc.message()
+                << std::endl;
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /*
+        ============================================================
+        ALREADY A SYMLINK
+        ============================================================
+    */
+
+    if(std::filesystem::is_symlink(status))
+    {
+        std::error_code targetEc;
+
+        const auto target =
+            std::filesystem::read_symlink(
+                legacyPath,
+                targetEc
+            );
+
+        const bool alreadyCorrect =
+            !targetEc &&
+            (
+                target ==
+                    std::filesystem::path(
+                        CANONICAL_WINDOWS_USER
+                    ) ||
+                target.filename() ==
+                    CANONICAL_WINDOWS_USER
+            );
+
+        if(alreadyCorrect)
+        {
+            return true;
+        }
+
+        std::error_code upperEc;
+
+        std::filesystem::remove_all(
+            persistentLegacyPath,
+            upperEc
+        );
+
+        if(upperEc)
+        {
+            std::cerr
+                << "Could not remove stale persistent legacy"
+                << " Windows user:"
+                << std::endl
+                << "    "
+                << persistentLegacyPath
+                << std::endl
+                << "    "
+                << upperEc.message()
+                << std::endl;
+
+            return false;
+        }
+
+        upperEc.clear();
+
+        std::filesystem::create_directory_symlink(
+            CANONICAL_WINDOWS_USER,
+            persistentLegacyPath,
+            upperEc
+        );
+
+        if(upperEc)
+        {
+            std::cerr
+                << "Could not recreate legacy Windows user redirect:"
+                << std::endl
+                << "    "
+                << persistentLegacyPath
+                << std::endl
+                << "    "
+                << upperEc.message()
+                << std::endl;
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /*
+        ============================================================
+        REAL DIRECTORY
+        ============================================================
+
+        IMPORTANT:
+
+        Never copy from legacyPath here.
+
+        legacyPath points into the FUSE merged prefix:
+
+            /tmp/.../merged_prefix/...
+
+        The actual source is sourceLegacyPath, which points directly
+        into the immutable global lower prefix.
+
+        The destination is the persistent game upper.
+    */
+
+    if(std::filesystem::is_directory(status))
+    {
+        std::error_code sourceEc;
+
+        const auto sourceStatus =
+            std::filesystem::symlink_status(
+                sourceLegacyPath,
+                sourceEc
+            );
+
+        if(
+            sourceStatus.type() ==
+            std::filesystem::file_type::not_found
+        )
+        {
+            /*
+                The profile may already exist only in the game upper.
+                In that case there is nothing to migrate from the
+                immutable base.
+            */
+            sourceEc.clear();
+        }
+        else if(sourceEc)
+        {
+            std::cerr
+                << "Could not inspect source Windows profile:"
+                << std::endl
+                << "    "
+                << sourceLegacyPath
+                << std::endl
+                << "    "
+                << sourceEc.message()
+                << std::endl;
+
+            return false;
+        }
+
+        if(
+            !sourceEc &&
+            std::filesystem::is_directory(sourceStatus)
+        )
+        {
+            std::cout
+                << "Migrating legacy Windows profile into canonical"
+                << " RetroDisc profile:"
+                << std::endl
+                << "    "
+                << sourceLegacyPath
+                << std::endl
+                << " -> "
+                << persistentCanonicalPath
+                << std::endl;
+
+            std::error_code copyEc;
+
+            std::filesystem::create_directories(
+                persistentCanonicalPath,
+                copyEc
+            );
+
+            if(copyEc)
+            {
+                std::cerr
+                    << "Could not create persistent RetroDisc profile:"
+                    << std::endl
+                    << "    "
+                    << persistentCanonicalPath
+                    << std::endl
+                    << "    "
+                    << copyEc.message()
+                    << std::endl;
+
+                return false;
+            }
+
+            copyEc.clear();
+
+            std::filesystem::copy(
+                sourceLegacyPath,
+                persistentCanonicalPath,
+                std::filesystem::copy_options::recursive |
+                std::filesystem::copy_options::skip_existing,
+                copyEc
+            );
+
+            if(copyEc)
+            {
+                std::cerr
+                    << "Could not migrate legacy Windows profile:"
+                    << std::endl
+                    << "    "
+                    << sourceLegacyPath
+                    << std::endl
+                    << "    "
+                    << copyEc.message()
+                    << std::endl;
+
+                return false;
+            }
+        }
+
+        /*
+            Replace only the persistent upper entry.
+
+            The lower directory is never removed.
+        */
+
+        std::error_code upperEc;
+
+        const auto upperStatus =
+            std::filesystem::symlink_status(
+                persistentLegacyPath,
+                upperEc
+            );
+
+        if(
+            upperEc &&
+            upperEc !=
+                std::make_error_code(
+                    std::errc::no_such_file_or_directory
+                )
+        )
+        {
+            std::cerr
+                << "Could not inspect persistent legacy"
+                << " Windows user:"
+                << std::endl
+                << "    "
+                << persistentLegacyPath
+                << std::endl
+                << "    "
+                << upperEc.message()
+                << std::endl;
+
+            return false;
+        }
+
+        if(
+            !upperEc &&
+            upperStatus.type() !=
+                std::filesystem::file_type::not_found
+        )
+        {
+            upperEc.clear();
+
+            std::filesystem::remove_all(
+                persistentLegacyPath,
+                upperEc
+            );
+
+            if(upperEc)
+            {
+                std::cerr
+                    << "Could not remove persistent legacy"
+                    << " Windows user:"
+                    << std::endl
+                    << "    "
+                    << persistentLegacyPath
+                    << std::endl
+                    << "    "
+                    << upperEc.message()
+                    << std::endl;
+
+                return false;
+            }
+        }
+
+        upperEc.clear();
+
+        std::filesystem::create_directory_symlink(
+            CANONICAL_WINDOWS_USER,
+            persistentLegacyPath,
+            upperEc
+        );
+
+        if(upperEc)
+        {
+            std::cerr
+                << "Could not create legacy Windows user redirect"
+                << " after migration:"
+                << std::endl
+                << "    "
+                << persistentLegacyPath
+                << std::endl
+                << "    "
+                << upperEc.message()
+                << std::endl;
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /*
+        ============================================================
+        UNEXPECTED ENTRY
+        ============================================================
+    */
+
+    std::cerr
+        << "Legacy Windows user path is neither a directory nor"
+        << " a symlink, leaving it untouched:"
+        << std::endl
+        << "    "
+        << legacyPath
+        << std::endl;
+
+    return true;
+}
 
 /*
     ================================================================
@@ -965,7 +1633,17 @@ bool prepareRuntimeUser(
     }
 
     const auto usersDirectory =
-        ctx.prefixOverlayDirectory /
+        ctx.prefixMergedPfxDirectory /
+        "drive_c" /
+        "users";
+
+    const auto sourceUsersDirectory =
+        ctx.prefixLowerDirectory /
+        (
+            ctx.runtime == "proton"
+                ? std::filesystem::path("pfx")
+                : std::filesystem::path()
+        ) /
         "drive_c" /
         "users";
 
@@ -1013,23 +1691,62 @@ bool prepareRuntimeUser(
         return false;
     }
 
+    const auto persistentUsersDirectory =
+        ctx.prefixOverlayDirectory /
+        "pfx" /
+        "drive_c" /
+        "users";
+
     /*
-        IMPORTANT:
+        ============================================================
+        LEGACY USER REDIRECTS
+        ============================================================
 
-        Do NOT create:
+        Proton hardcodes "steamuser" for parts of its own internal
+        user handling, and stock Wine can fall back to the actual
+        Unix account name instead of honoring WINEUSERNAME in some
+        circumstances. Both names are made symlinks into the
+        canonical RetroDisc profile (migrating any real content
+        already sitting there first) so that whichever one Wine or
+        Proton actually ends up using internally, the data still
+        lands in -- and is read back from -- the one persistent
+        profile, regardless of which runtime is active.
 
-            users/maxim
-            users/steamuser
-            users/Public
-
-        as active canonical profiles.
-
-        RetroDisc is the one persistent Windows user.
-
-        Existing legacy profiles may remain on disk for backwards
-        compatibility, but Wine/Proton is always pointed at the
-        RetroDisc profile.
+        RetroDisc itself is always the canonical, persistent Windows
+        user; nothing here creates a second independent profile.
     */
+
+    if(!migrateAndSymlinkLegacyUser(
+        usersDirectory,
+        persistentUsersDirectory,
+        sourceUsersDirectory,
+        "steamuser"
+    ))
+    {
+        return false;
+    }
+
+    const char* unixUserEnv =
+        std::getenv("USER");
+
+    if(!unixUserEnv || *unixUserEnv == '\0')
+    {
+        unixUserEnv =
+            std::getenv("LOGNAME");
+    }
+
+    if(unixUserEnv && *unixUserEnv != '\0')
+    {
+        if(!migrateAndSymlinkLegacyUser(
+            usersDirectory,
+            persistentUsersDirectory,
+            sourceUsersDirectory,
+            unixUserEnv
+        ))
+        {
+            return false;
+        }
+    }
 
     std::cout
         << "Runtime user:"
@@ -1129,7 +1846,7 @@ bool appendWineUserDirectories(
 )
 {
     const auto userDirectory =
-        ctx.prefixOverlayDirectory /
+        ctx.prefixMergedPfxDirectory /
         "drive_c" /
         "users" /
         CANONICAL_WINDOWS_USER;
@@ -1713,7 +2430,7 @@ std::string buildWineCommand(
     const std::string&
 )
 {
-    if(ctx.prefixMergedDirectory.empty())
+    if(ctx.prefixMergedPfxDirectory.empty())
     {
         return {};
     }
@@ -1728,20 +2445,25 @@ std::string buildWineCommand(
         Wine must always use the merged overlay.
 
             LOWER:
-                ~/.RetroDisc/pfx
+                ~/.RetroDisc/prefix/<proton|wine>/<version>/
+                    (contains pfx/, and for Proton also version and
+                    tracked_files)
 
             UPPER:
-                <game>/pfx
+                <game>/prefix
+                    (mirrors the same layout: prefix/pfx/...)
 
             MERGED:
-                /tmp/RetroDisc-<gameId>/merged
+                /tmp/<gameId>-<pid>/merged_prefix
+                    (the actual Wine prefix Wine/Proton use is the
+                    "pfx" subdirectory of this merged tree)
 
         The persistent upper directory must NEVER be used directly
         as WINEPREFIX.
     */
 
     const auto prefix =
-        ctx.prefixMergedDirectory;
+        ctx.prefixMergedPfxDirectory;
 
     const auto userDirectory =
         prefix /
@@ -1916,7 +2638,9 @@ std::string buildProtonCommand(
 )
 {
     const auto proton =
-        findProton(ctx);
+        ctx.resolvedProtonPath.empty()
+            ? findProton(ctx)
+            : ctx.resolvedProtonPath;
 
     if(proton.empty())
     {
@@ -1978,7 +2702,7 @@ std::string buildProtonCommand(
         ============================================================
     */
 
-    if(ctx.prefixMergedDirectory.empty())
+    if(ctx.prefixMergedPfxDirectory.empty())
     {
         std::cerr
             << "Proton merged prefix is empty."
@@ -1988,7 +2712,7 @@ std::string buildProtonCommand(
     }
 
     const auto prefix =
-        ctx.prefixMergedDirectory;
+        ctx.prefixMergedPfxDirectory;
 
 
     /*
@@ -1996,33 +2720,48 @@ std::string buildProtonCommand(
         PROTON COMPATIBILITY DATA
         ============================================================
 
-        The compatibility-data directory is still the persistent
-        per-game directory:
+        STEAM_COMPAT_DATA_PATH is simply the whole per-launch merged
+        overlay:
 
-            <gameDirectory>/
-                pfx/       <- persistent overlay UPPER
-                ...
+            /tmp/<gameId>-<pid>/merged_prefix/
+                version         (from the base build directory)
+                tracked_files   (from the base build directory)
+                pfx/            (== ctx.prefixMergedPfxDirectory)
 
-        Proton gets this directory through:
+        Confirmed by actual testing: Proton does NOT reliably honor
+        WINEPREFIX for its own real prefix I/O -- it derives the
+        prefix it actually operates on from
+        $STEAM_COMPAT_DATA_PATH/pfx. Earlier versions of this code
+        tried to work around that with a separate, synthetic
+        compat-data directory whose "pfx" was a symlink to the
+        merged overlay. That extra indirection turned out to make
+        Proton re-run a full prefix setup on every launch (its own
+        internal "is this compat-data already valid" checks did not
+        consider a freshly rebuilt, mostly-empty synthetic directory
+        equivalent to a real, complete compat-data directory),
+        writing hundreds of MiB into <datapath>/prefix every single
+        launch.
 
-            STEAM_COMPAT_DATA_PATH
-
-        But the actual Wine prefix is the mounted overlay:
-
-            /tmp/RetroDisc-<gameId>/merged
-
-        Therefore WINEPREFIX explicitly points to the merged
-        overlay and MUST NOT point to the persistent upperdir.
+        The fix: ctx.prefixLowerDirectory is now the BUILD directory
+        itself (~/.RetroDisc/prefix/proton/<Build>/, containing
+        version, tracked_files AND pfx/) rather than just the pfx
+        subdirectory, and <datapath>/prefix mirrors that same layout
+        (<datapath>/prefix/pfx/... plus, if Proton ever legitimately
+        changes them, <datapath>/prefix/version and
+        <datapath>/prefix/tracked_files). STEAM_COMPAT_DATA_PATH and
+        WINEPREFIX therefore resolve into the EXACT SAME overlay
+        mount -- there is no separate synthetic directory to keep in
+        sync, so Proton's own validity checks see a real, complete,
+        already-initialized compat-data directory on every launch.
     */
 
     const auto compatData =
-        ctx.prefixMergedDirectory.parent_path();
+        ctx.prefixMergedDirectory;
 
     if(compatData.empty())
     {
         std::cerr
-            << "Could not determine Proton compatibility-data"
-            << " directory."
+            << "Proton compat-data directory is not prepared."
             << std::endl;
 
         return {};
@@ -2091,11 +2830,10 @@ std::string buildProtonCommand(
         WINE PREFIX
         ============================================================
 
-        Proton must use the merged overlay as its actual prefix.
-
-        Do NOT let Proton fall back to:
-
-            STEAM_COMPAT_DATA_PATH/pfx
+        WINEPREFIX and $STEAM_COMPAT_DATA_PATH/pfx are now the exact
+        same directory (ctx.prefixMergedPfxDirectory), so it no
+        longer matters which one Proton actually reads internally --
+        both resolve to this launch's merged overlay.
     */
 
     command
@@ -2427,7 +3165,7 @@ bool launchGame(
         return false;
     }
 
-    if(ctx.prefixMergedDirectory.empty())
+    if(ctx.prefixMergedPfxDirectory.empty())
     {
         std::cerr
             << "Wine prefix path is empty."
@@ -2515,7 +3253,7 @@ bool launchGame(
     */
 
     const auto prefixDirectory =
-        ctx.prefixMergedDirectory;
+        ctx.prefixMergedPfxDirectory;
 
     const auto prefixStatus =
         std::filesystem::symlink_status(
@@ -2599,7 +3337,7 @@ bool launchGame(
         << std::endl;
 
     std::cout
-        << "Shared prefix:"
+        << "Merged prefix:"
         << std::endl
         << "    "
         << prefixDirectory
@@ -2783,7 +3521,7 @@ bool launchGame(
         << std::endl;
 
     std::cout
-        << "Shared Wine/Proton prefix:"
+        << "Merged Wine/Proton prefix:"
         << std::endl
         << "    "
         << prefixDirectory

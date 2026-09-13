@@ -2,14 +2,24 @@
 #include "registry.hpp"
 #include "context.hpp"
 #include "runtime.hpp"
+#include "prefix_sanitize.hpp"
 #include "../filesystem/filesystem_internal.hpp"
 
+#include <array>
+#include <algorithm>
+#include <cstdio>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <sys/types.h>
+#include <pwd.h>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <sstream>
+#include <vector>
 
 
 namespace
@@ -37,37 +47,942 @@ std::filesystem::path getHome()
 }
 
 
+std::string getUnixUsername()
+{
+    const auto uid =
+        ::getuid();
+
+    const auto* password =
+        ::getpwuid(uid);
+
+    if(
+        password == nullptr ||
+        password->pw_name == nullptr ||
+        *password->pw_name == '\0'
+    )
+    {
+        return {};
+    }
+
+
+    return std::string(
+        password->pw_name
+    );
+}
+
+
+std::filesystem::path findSteamRootForProton(
+    const std::filesystem::path& proton
+)
+{
+    const auto home = getHome();
+
+    if(home.empty() || proton.empty())
+    {
+        return {};
+    }
+
+    const std::vector<std::filesystem::path> roots =
+    {
+        home / ".local" / "share" / "Steam",
+        home / ".steam" / "root",
+        home / ".steam" / "steam"
+    };
+
+    std::error_code protonError;
+
+    const auto normalizedProton =
+        std::filesystem::weakly_canonical(
+            proton,
+            protonError
+        );
+
+    if(protonError)
+    {
+        return {};
+    }
+
+    for(const auto& root : roots)
+    {
+        std::error_code ec;
+
+        const auto normalizedRoot =
+            std::filesystem::weakly_canonical(
+                root,
+                ec
+            );
+
+        if(ec)
+        {
+            continue;
+        }
+
+        const auto relative =
+            normalizedProton.lexically_relative(
+                normalizedRoot
+            );
+
+        if(
+            !relative.empty() &&
+            relative != "." &&
+            relative.native().rfind("..", 0) != 0
+        )
+        {
+            return normalizedRoot;
+        }
+    }
+
+    return {};
+}
+
+
+class InitializationLock
+{
+public:
+
+    explicit InitializationLock(
+        const std::filesystem::path& path
+    )
+    {
+        fd =
+            ::open(
+                path.c_str(),
+                O_CREAT | O_RDWR | O_NOFOLLOW,
+                0600
+            );
+
+        if(fd >= 0)
+        {
+            locked =
+                (::flock(fd, LOCK_EX) == 0);
+        }
+    }
+
+    ~InitializationLock()
+    {
+        if(fd >= 0)
+        {
+            if(locked)
+            {
+                ::flock(
+                    fd,
+                    LOCK_UN
+                );
+            }
+
+            ::close(fd);
+        }
+    }
+
+    bool isLocked() const
+    {
+        return locked;
+    }
+
+private:
+
+    int fd = -1;
+    bool locked = false;
+};
+
+
 /*
     ================================================================
-    COPY BUNDLED PREFIX WITHOUT WINDOWS
+    SANITIZE IDENTIFIER
     ================================================================
 */
 
 
-bool copyBundledPrefixWithoutWindows(
+std::string sanitizeIdentifier(
+    const std::string& raw
+)
+{
+    std::string result;
+    result.reserve(
+        raw.size()
+    );
+
+
+    for(const char c : raw)
+    {
+        if(
+            c == '/' ||
+            c == '\\' ||
+            c == '\0'
+        )
+        {
+            result += '_';
+        }
+        else
+        {
+            result += c;
+        }
+    }
+
+
+    const auto start =
+        result.find_first_not_of(
+            " \t\r\n"
+        );
+
+    const auto end =
+        result.find_last_not_of(
+            " \t\r\n"
+        );
+
+
+    if(start == std::string::npos)
+    {
+        return "default";
+    }
+
+
+    result =
+        result.substr(
+            start,
+            end - start + 1
+        );
+
+
+    if(
+        result.empty() ||
+        result == "." ||
+        result == ".."
+    )
+    {
+        return "default";
+    }
+
+
+    return result;
+}
+
+
+/*
+    ================================================================
+    RESOLVE PROTON VERSION IDENTIFIER
+    ================================================================
+*/
+
+
+std::string resolveProtonVersionIdentifier(
+    const std::filesystem::path& protonBinary
+)
+{
+    if(protonBinary.empty())
+    {
+        return "default";
+    }
+
+
+    const auto directoryName =
+        protonBinary
+            .parent_path()
+            .filename()
+            .string();
+
+
+    return sanitizeIdentifier(
+        directoryName
+    );
+}
+
+
+/*
+    ================================================================
+    RESOLVE WINE VERSION IDENTIFIER
+    ================================================================
+*/
+
+
+std::string resolveWineVersionIdentifier()
+{
+    std::array<char, 256> buffer{};
+    std::string output;
+
+
+    FILE* pipe =
+        popen(
+            "wine --version 2>/dev/null",
+            "r"
+        );
+
+
+    if(pipe == nullptr)
+    {
+        return "default";
+    }
+
+
+    while(
+        fgets(
+            buffer.data(),
+            static_cast<int>(buffer.size()),
+            pipe
+        ) != nullptr
+    )
+    {
+        output +=
+            buffer.data();
+    }
+
+
+    const int status =
+        pclose(pipe);
+
+
+    if(
+        status != 0 ||
+        output.empty()
+    )
+    {
+        return "default";
+    }
+
+
+    return sanitizeIdentifier(
+        output
+    );
+}
+
+
+/*
+    ================================================================
+    RESOLVE GLOBAL PREFIX DIRECTORY
+    ================================================================
+*/
+
+
+std::filesystem::path resolveGlobalPrefixDirectory(
+    const std::filesystem::path& home,
+    const std::string& runtimeFolder,
+    const std::string& versionIdentifier
+)
+{
+    return
+        home /
+        ".RetroDisc" /
+        "prefix" /
+        runtimeFolder /
+        versionIdentifier;
+}
+
+
+/*
+    ================================================================
+    COPY BUNDLED PREFIX AS DELTA
+    ================================================================
+
+    The global Wine prefix is the immutable LOWER layer.
+
+    The bundled game prefix is compared against that lower layer.
+    Only differences are copied into the persistent UPPER.
+
+        global prefix
+            +
+        bundled differences
+            =
+        merged prefix
+
+    The persistent game prefix therefore remains an overlay delta.
+*/
+
+
+bool filesEqual(
+    const std::filesystem::path& left,
+    const std::filesystem::path& right
+)
+{
+    std::error_code ec;
+
+    const auto leftStatus =
+        std::filesystem::symlink_status(left, ec);
+
+    if(ec || !std::filesystem::is_regular_file(leftStatus))
+        return false;
+
+    ec.clear();
+
+    const auto rightStatus =
+        std::filesystem::symlink_status(right, ec);
+
+    if(ec || !std::filesystem::is_regular_file(rightStatus))
+        return false;
+
+    ec.clear();
+
+    const auto leftSize =
+        std::filesystem::file_size(left, ec);
+
+    if(ec)
+        return false;
+
+    ec.clear();
+
+    const auto rightSize =
+        std::filesystem::file_size(right, ec);
+
+    if(ec || leftSize != rightSize)
+        return false;
+
+    ec.clear();
+
+    if(std::filesystem::equivalent(left, right, ec) && !ec)
+        return true;
+
+    std::ifstream a(left, std::ios::binary);
+    std::ifstream b(right, std::ios::binary);
+
+    if(!a.is_open() || !b.is_open())
+        return false;
+
+    std::array<char, 64 * 1024> ab{};
+    std::array<char, 64 * 1024> bb{};
+
+    for(;;)
+    {
+        a.read(
+            ab.data(),
+            static_cast<std::streamsize>(ab.size())
+        );
+
+        b.read(
+            bb.data(),
+            static_cast<std::streamsize>(bb.size())
+        );
+
+        if(a.gcount() != b.gcount())
+            return false;
+
+        if(!std::equal(
+            ab.begin(),
+            ab.begin() + a.gcount(),
+            bb.begin()
+        ))
+        {
+            return false;
+        }
+
+        if(a.eof() && b.eof())
+            return true;
+
+        if(!a && !a.eof())
+            return false;
+
+        if(!b && !b.eof())
+            return false;
+    }
+}
+
+
+bool isPersonalHomeSymlink(
     const std::filesystem::path& source,
-    const std::filesystem::path& destination
+    const std::filesystem::path& linkTarget
+)
+{
+    std::filesystem::path target = linkTarget;
+
+    if(target.is_relative())
+        target = source.parent_path() / target;
+
+    std::error_code ec;
+
+    const auto canonical =
+        std::filesystem::weakly_canonical(
+            target,
+            ec
+        );
+
+    if(ec)
+        return false;
+
+    const auto normalized =
+        canonical.lexically_normal().string();
+
+    return
+        normalized == "/home" ||
+        normalized.rfind(
+            "/home/",
+            0
+        ) == 0;
+}
+
+
+/*
+    ================================================================
+    ENSURE WINE USER SYMLINK
+    ================================================================
+
+    Wine always uses RetroDisc as the canonical Windows user.
+
+    The Unix username is linked to that directory so that paths
+    generated by Wine using the Unix account name resolve to the
+    same persistent Windows profile.
+
+        drive_c/users/
+        ├── RetroDisc/
+        └── <unix-user> -> RetroDisc
+
+    This is part of the persistent UPPER. It is therefore a
+    game-specific delta and is never written to the global LOWER.
+*/
+
+
+bool ensureWineUserSymlink(
+    const std::filesystem::path& persistentPrefix
+)
+{
+    const auto unixUsername =
+        getUnixUsername();
+
+    if(unixUsername.empty())
+    {
+        std::cerr
+            << "Could not determine Unix username."
+            << std::endl;
+
+        return false;
+    }
+
+
+    const auto usersDirectory =
+        persistentPrefix /
+        "drive_c" /
+        "users";
+
+
+    const auto canonicalUserDirectory =
+        usersDirectory /
+        "RetroDisc";
+
+
+    const auto unixUserPath =
+        usersDirectory /
+        unixUsername;
+
+
+    std::error_code ec;
+
+
+    std::filesystem::create_directories(
+        canonicalUserDirectory,
+        ec
+    );
+
+    if(ec)
+    {
+        std::cerr
+            << "Could not create RetroDisc Windows user directory:"
+            << std::endl
+            << "    "
+            << canonicalUserDirectory
+            << std::endl
+            << "    "
+            << ec.message()
+            << std::endl;
+
+        return false;
+    }
+
+
+    const auto status =
+        std::filesystem::symlink_status(
+            unixUserPath,
+            ec
+        );
+
+
+    if(!ec)
+    {
+        if(std::filesystem::is_symlink(status))
+        {
+            const auto existingTarget =
+                std::filesystem::read_symlink(
+                    unixUserPath,
+                    ec
+                );
+
+            if(
+                !ec &&
+                existingTarget == std::filesystem::path(
+                    "RetroDisc"
+                )
+            )
+            {
+                return true;
+            }
+
+
+            if(ec)
+            {
+                std::cerr
+                    << "Could not inspect existing Wine user symlink:"
+                    << std::endl
+                    << "    "
+                    << unixUserPath
+                    << std::endl
+                    << "    "
+                    << ec.message()
+                    << std::endl;
+
+                return false;
+            }
+
+
+            std::filesystem::remove(
+                unixUserPath,
+                ec
+            );
+
+            if(ec)
+            {
+                std::cerr
+                    << "Could not replace existing Wine user symlink:"
+                    << std::endl
+                    << "    "
+                    << unixUserPath
+                    << std::endl
+                    << "    "
+                    << ec.message()
+                    << std::endl;
+
+                return false;
+            }
+        }
+        else
+        {
+            /*
+                Never delete a real user directory/file just to
+                create our compatibility symlink.
+            */
+
+            std::cerr
+                << "Wine Unix-user path already exists and is not"
+                << " a symlink:"
+                << std::endl
+                << "    "
+                << unixUserPath
+                << std::endl;
+
+            return false;
+        }
+    }
+    else if(
+        ec != std::errc::no_such_file_or_directory
+    )
+    {
+        std::cerr
+            << "Could not inspect Wine Unix-user path:"
+            << std::endl
+            << "    "
+            << unixUserPath
+            << std::endl
+            << "    "
+            << ec.message()
+            << std::endl;
+
+        return false;
+    }
+
+
+    ec.clear();
+
+
+    std::filesystem::create_symlink(
+        "RetroDisc",
+        unixUserPath,
+        ec
+    );
+
+
+    if(ec)
+    {
+        std::cerr
+            << "Could not create Wine Unix-user compatibility symlink:"
+            << std::endl
+            << "    "
+            << unixUserPath
+            << " -> RetroDisc"
+            << std::endl
+            << "    "
+            << ec.message()
+            << std::endl;
+
+        return false;
+    }
+
+
+    std::cout
+        << "Wine user compatibility symlink:"
+        << std::endl
+        << "    "
+        << unixUserPath
+        << " -> RetroDisc"
+        << std::endl;
+
+
+    return true;
+}
+
+
+bool compactPersistentPrefix(
+    const std::filesystem::path& upper,
+    const std::filesystem::path& base
+)
+{
+    std::error_code ec;
+
+    if(!std::filesystem::is_directory(upper, ec))
+        return true;
+
+    const auto root =
+        upper.lexically_normal();
+
+    std::function<bool(
+        const std::filesystem::path&
+    )> compact =
+        [&](const std::filesystem::path& directory) -> bool
+        {
+            std::vector<std::filesystem::path> entries;
+
+            std::error_code iteratorError;
+
+            std::filesystem::directory_iterator iterator(
+                directory,
+                std::filesystem::directory_options::
+                    skip_permission_denied,
+                iteratorError
+            );
+
+            if(iteratorError)
+            {
+                std::cerr
+                    << "Could not list persistent prefix directory:"
+                    << std::endl
+                    << "    "
+                    << directory
+                    << std::endl
+                    << "    "
+                    << iteratorError.message()
+                    << std::endl;
+
+                return false;
+            }
+
+            for(const auto& entry : iterator)
+                entries.push_back(entry.path());
+
+            for(const auto& entry : entries)
+            {
+                const auto relative =
+                    entry.lexically_relative(root);
+
+                const auto baseEntry =
+                    base / relative;
+
+                std::error_code entryError;
+
+                const auto status =
+                    std::filesystem::symlink_status(
+                        entry,
+                        entryError
+                    );
+
+                if(entryError)
+                {
+                    std::cerr
+                        << "Could not inspect persistent prefix entry:"
+                        << std::endl
+                        << "    "
+                        << entry
+                        << std::endl
+                        << "    "
+                        << entryError.message()
+                        << std::endl;
+
+                    return false;
+                }
+
+                if(std::filesystem::is_directory(status))
+                {
+                    if(!compact(entry))
+                        return false;
+
+                    continue;
+                }
+
+                if(std::filesystem::is_regular_file(status))
+                {
+                    if(filesEqual(entry, baseEntry))
+                    {
+                        std::filesystem::remove(
+                            entry,
+                            entryError
+                        );
+
+                        if(entryError)
+                        {
+                            std::cerr
+                                << "Could not remove redundant persistent"
+                                << " prefix file:"
+                                << std::endl
+                                << "    "
+                                << entry
+                                << std::endl
+                                << "    "
+                                << entryError.message()
+                                << std::endl;
+
+                            return false;
+                        }
+                    }
+
+                    continue;
+                }
+
+                if(std::filesystem::is_symlink(status))
+                {
+                    std::error_code baseError;
+
+                    const auto baseStatus =
+                        std::filesystem::symlink_status(
+                            baseEntry,
+                            baseError
+                        );
+
+                    bool same = false;
+
+                    if(
+                        !baseError &&
+                        std::filesystem::is_symlink(
+                            baseStatus
+                        )
+                    )
+                    {
+                        std::error_code targetError;
+                        std::error_code existingTargetError;
+
+                        const auto target =
+                            std::filesystem::read_symlink(
+                                entry,
+                                targetError
+                            );
+
+                        const auto existingTarget =
+                            std::filesystem::read_symlink(
+                                baseEntry,
+                                existingTargetError
+                            );
+
+                        same =
+                            !targetError &&
+                            !existingTargetError &&
+                            target == existingTarget;
+                    }
+
+                    if(same)
+                    {
+                        std::filesystem::remove(
+                            entry,
+                            entryError
+                        );
+
+                        if(entryError)
+                        {
+                            std::cerr
+                                << "Could not remove redundant persistent"
+                                << " prefix symlink:"
+                                << std::endl
+                                << "    "
+                                << entry
+                                << std::endl
+                                << "    "
+                                << entryError.message()
+                                << std::endl;
+
+                            return false;
+                        }
+                    }
+
+                    continue;
+                }
+
+                /*
+                    Overlay whiteouts/unknown entries are intentionally
+                    retained.
+                */
+            }
+
+            if(directory != root)
+            {
+                std::error_code checkError;
+
+                if(std::filesystem::is_empty(
+                    directory,
+                    checkError
+                ))
+                {
+                    std::filesystem::remove(
+                        directory,
+                        checkError
+                    );
+
+                    if(checkError)
+                    {
+                        std::cerr
+                            << "Could not remove now-empty persistent"
+                            << " prefix directory:"
+                            << std::endl
+                            << "    "
+                            << directory
+                            << std::endl
+                            << "    "
+                            << checkError.message()
+                            << std::endl;
+
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        };
+
+    return compact(root);
+}
+
+
+bool copyBundledPrefix(
+    const std::filesystem::path& source,
+    const std::filesystem::path& destination,
+    const std::filesystem::path& base
 )
 {
     std::error_code ec;
 
 
-    const auto sourceStatus =
-        std::filesystem::symlink_status(
-            source,
-            ec
-        );
+    const auto sourceDriveC =
+        source / "drive_c";
+
+    const auto sourceDosDevices =
+        source / "dosdevices";
+
+    const auto sourceSystemReg =
+        source / "system.reg";
+
+    const auto sourceUserReg =
+        source / "user.reg";
 
 
     if(
-        ec ||
-        !std::filesystem::is_directory(
-            sourceStatus
-        )
+        !directoryExists(sourceDriveC) ||
+        !directoryExists(sourceDosDevices) ||
+        !regularFileExists(sourceSystemReg) ||
+        !regularFileExists(sourceUserReg)
     )
     {
         std::cerr
-            << "Bundled Wine prefix source is not a directory:"
+            << "Bundled Wine prefix is invalid or incomplete:"
             << std::endl
             << "    "
             << source
@@ -77,12 +992,57 @@ bool copyBundledPrefixWithoutWindows(
     }
 
 
-    if(std::filesystem::exists(
-        destination
-    ))
+    const auto baseRoot =
+        (base / "pfx").lexically_normal();
+
+
+    if(
+        !directoryExists(
+            baseRoot / "drive_c"
+        ) ||
+        !directoryExists(
+            baseRoot / "dosdevices"
+        ) ||
+        !regularFileExists(
+            baseRoot / "system.reg"
+        ) ||
+        !regularFileExists(
+            baseRoot / "user.reg"
+        )
+    )
     {
         std::cerr
-            << "Wine prefix destination already exists:"
+            << "Selected global base prefix is invalid or incomplete:"
+            << std::endl
+            << "    "
+            << baseRoot
+            << std::endl;
+
+        return false;
+    }
+
+
+    const auto destinationStatus =
+        std::filesystem::symlink_status(
+            destination,
+            ec
+        );
+
+
+    if(
+        !ec &&
+        (
+            std::filesystem::exists(
+                destinationStatus
+            ) ||
+            std::filesystem::is_symlink(
+                destinationStatus
+            )
+        )
+    )
+    {
+        std::cerr
+            << "Wine prefix delta destination already exists:"
             << std::endl
             << "    "
             << destination
@@ -90,6 +1050,25 @@ bool copyBundledPrefixWithoutWindows(
 
         return false;
     }
+
+
+    if(ec != std::errc::no_such_file_or_directory)
+    {
+        std::cerr
+            << "Could not inspect Wine prefix delta destination:"
+            << std::endl
+            << "    "
+            << destination
+            << std::endl
+            << "    "
+            << ec.message()
+            << std::endl;
+
+        return false;
+    }
+
+
+    ec.clear();
 
 
     std::filesystem::create_directories(
@@ -101,7 +1080,7 @@ bool copyBundledPrefixWithoutWindows(
     if(ec)
     {
         std::cerr
-            << "Could not create Wine prefix destination:"
+            << "Could not create Wine prefix delta destination:"
             << std::endl
             << "    "
             << destination
@@ -114,13 +1093,32 @@ bool copyBundledPrefixWithoutWindows(
     }
 
 
-    const auto options =
-        std::filesystem::directory_options::skip_permission_denied;
+    std::cout
+        << "Creating bundled Wine prefix delta:"
+        << std::endl
+        << "    Source: "
+        << source
+        << std::endl
+        << "    Base:   "
+        << base
+        << std::endl
+        << "    Base root:"
+        << std::endl
+        << "        "
+        << baseRoot
+        << std::endl
+        << "    Upper:  "
+        << destination
+        << std::endl;
+
+
+    const auto sourceRoot =
+        source.lexically_normal();
 
 
     std::filesystem::recursive_directory_iterator iterator(
         source,
-        options,
+        std::filesystem::directory_options::skip_permission_denied,
         ec
     );
 
@@ -128,7 +1126,7 @@ bool copyBundledPrefixWithoutWindows(
     if(ec)
     {
         std::cerr
-            << "Could not read bundled Wine prefix:"
+            << "Could not iterate bundled Wine prefix:"
             << std::endl
             << "    "
             << source
@@ -139,18 +1137,6 @@ bool copyBundledPrefixWithoutWindows(
 
         return false;
     }
-
-
-    /*
-        Never use std::filesystem::relative() here.
-
-        Wine prefixes contain symbolic links and relative() may
-        resolve them unexpectedly.
-    */
-
-
-    const std::string sourceRoot =
-        source.lexically_normal().generic_string();
 
 
     const auto end =
@@ -163,151 +1149,48 @@ bool copyBundledPrefixWithoutWindows(
             iterator->path();
 
 
-        const std::string sourceString =
-            sourcePath.generic_string();
-
-
-        if(
-            sourceString.size() <=
-            sourceRoot.size()
-        )
-        {
-            std::cerr
-                << "Could not determine relative Wine prefix path:"
-                << std::endl
-                << "    "
-                << sourcePath
-                << std::endl;
-
-            return false;
-        }
-
-
-        if(
-            sourceString.compare(
-                0,
-                sourceRoot.size(),
+        const auto relative =
+            sourcePath.lexically_relative(
                 sourceRoot
-            ) != 0
-        )
-        {
-            std::cerr
-                << "Wine prefix iterator escaped source directory:"
-                << std::endl
-                << "    "
-                << sourcePath
-                << std::endl;
-
-            return false;
-        }
-
-
-        std::string relativeString =
-            sourceString.substr(
-                sourceRoot.size()
             );
-
-
-        while(
-            !relativeString.empty() &&
-            relativeString.front() == '/'
-        )
-        {
-            relativeString.erase(
-                relativeString.begin()
-            );
-        }
-
-
-        if(relativeString.empty())
-        {
-            ++iterator;
-            continue;
-        }
-
-
-        const std::filesystem::path relative =
-            std::filesystem::path(
-                relativeString
-            );
-
-
-        /*
-            ========================================================
-            SKIP drive_c/windows
-            ========================================================
-        */
-
-
-        if(
-            relativeString ==
-                "drive_c/windows" ||
-            relativeString.rfind(
-                "drive_c/windows/",
-                0
-            ) == 0
-        )
-        {
-            std::cout
-                << "Skipping bundled Wine Windows directory:"
-                << std::endl
-                << "    "
-                << sourcePath
-                << std::endl;
-
-
-            std::error_code directoryError;
-
-
-            if(iterator->is_directory(
-                directoryError
-            ))
-            {
-                iterator.disable_recursion_pending();
-            }
-
-
-            ++iterator;
-
-            continue;
-        }
 
 
         const auto target =
-            destination /
-            relative;
+            destination / relative;
 
 
-        /*
-            ========================================================
-            SYMLINKS
-            ========================================================
-        */
+        const auto basePath =
+            baseRoot / relative;
 
 
         std::error_code entryError;
 
 
-        if(iterator->is_symlink(
-            entryError
-        ))
+        const auto status =
+            std::filesystem::symlink_status(
+                sourcePath,
+                entryError
+            );
+
+
+        if(entryError)
         {
-            if(entryError)
-            {
-                std::cerr
-                    << "Could not inspect Wine prefix symlink:"
-                    << std::endl
-                    << "    "
-                    << sourcePath
-                    << std::endl
-                    << "    "
-                    << entryError.message()
-                    << std::endl;
+            std::cerr
+                << "Could not inspect bundled Wine prefix entry:"
+                << std::endl
+                << "    "
+                << sourcePath
+                << std::endl
+                << "    "
+                << entryError.message()
+                << std::endl;
 
-                return false;
-            }
+            return false;
+        }
 
 
+        if(std::filesystem::is_symlink(status))
+        {
             const auto linkTarget =
                 std::filesystem::read_symlink(
                     sourcePath,
@@ -318,7 +1201,7 @@ bool copyBundledPrefixWithoutWindows(
             if(entryError)
             {
                 std::cerr
-                    << "Could not read Wine prefix symlink:"
+                    << "Could not read bundled Wine prefix symlink:"
                     << std::endl
                     << "    "
                     << sourcePath
@@ -331,75 +1214,125 @@ bool copyBundledPrefixWithoutWindows(
             }
 
 
-            /*
-                ----------------------------------------------------
-                Skip personal /home links.
-                ----------------------------------------------------
-            */
-
-
-            if(linkTarget.is_absolute())
+            if(isPersonalHomeSymlink(
+                   sourcePath,
+                   linkTarget
+               ))
             {
-                const auto normalizedTarget =
-                    linkTarget.lexically_normal();
+                ++iterator;
+                continue;
+            }
 
 
-                if(
-                    normalizedTarget ==
-                        std::filesystem::path("/home") ||
-                    normalizedTarget.string().rfind(
-                        "/home/",
-                        0
-                    ) == 0
+            bool same = false;
+
+
+            const auto baseStatus =
+                std::filesystem::symlink_status(
+                    basePath,
+                    entryError
+                );
+
+
+            if(
+                !entryError &&
+                std::filesystem::is_symlink(
+                    baseStatus
                 )
+            )
+            {
+                std::error_code targetError;
+
+
+                const auto existingTarget =
+                    std::filesystem::read_symlink(
+                        basePath,
+                        targetError
+                    );
+
+
+                same =
+                    !targetError &&
+                    existingTarget == linkTarget;
+            }
+
+
+            if(!same)
+            {
+                std::filesystem::create_directories(
+                    target.parent_path(),
+                    entryError
+                );
+
+
+                if(entryError)
                 {
-                    std::cout
-                        << "Skipping personal Wine prefix symlink:"
+                    std::cerr
+                        << "Could not create parent directory for"
+                        << " bundled Wine prefix symlink:"
                         << std::endl
                         << "    "
-                        << sourcePath
-                        << " -> "
-                        << linkTarget
+                        << target.parent_path()
+                        << std::endl
+                        << "    "
+                        << entryError.message()
                         << std::endl;
 
-                    ++iterator;
+                    return false;
+                }
 
-                    continue;
+
+                std::filesystem::create_symlink(
+                    linkTarget,
+                    target,
+                    entryError
+                );
+
+
+                if(entryError)
+                {
+                    std::cerr
+                        << "Could not create bundled Wine prefix symlink:"
+                        << std::endl
+                        << "    "
+                        << target
+                        << std::endl
+                        << "    "
+                        << entryError.message()
+                        << std::endl;
+
+                    return false;
                 }
             }
 
 
-            /*
-                ----------------------------------------------------
-                Preserve Wine/system symlinks.
-                ----------------------------------------------------
-            */
+            ++iterator;
+            continue;
+        }
 
 
-            std::filesystem::create_directories(
-                target.parent_path(),
-                entryError
-            );
+        if(std::filesystem::is_directory(status))
+        {
+            const auto baseStatus =
+                std::filesystem::symlink_status(
+                    basePath,
+                    entryError
+                );
 
 
-            if(entryError)
+            if(
+                !entryError &&
+                std::filesystem::is_directory(
+                    baseStatus
+                )
+            )
             {
-                std::cerr
-                    << "Could not create Wine prefix symlink parent:"
-                    << std::endl
-                    << "    "
-                    << target.parent_path()
-                    << std::endl
-                    << "    "
-                    << entryError.message()
-                    << std::endl;
-
-                return false;
+                ++iterator;
+                continue;
             }
 
 
-            std::filesystem::create_symlink(
-                linkTarget,
+            std::filesystem::create_directories(
                 target,
                 entryError
             );
@@ -408,7 +1341,8 @@ bool copyBundledPrefixWithoutWindows(
             if(entryError)
             {
                 std::cerr
-                    << "Could not create Wine prefix symlink:"
+                    << "Could not create bundled Wine prefix"
+                    << " directory:"
                     << std::endl
                     << "    "
                     << target
@@ -422,96 +1356,19 @@ bool copyBundledPrefixWithoutWindows(
 
 
             ++iterator;
-
             continue;
         }
 
 
-        /*
-            ========================================================
-            DIRECTORIES
-            ========================================================
-        */
-
-
-        entryError.clear();
-
-
-        if(iterator->is_directory(
-            entryError
-        ))
+        if(std::filesystem::is_regular_file(status))
         {
-            if(entryError)
+            if(filesEqual(
+                   sourcePath,
+                   basePath
+               ))
             {
-                std::cerr
-                    << "Could not inspect Wine prefix directory:"
-                    << std::endl
-                    << "    "
-                    << sourcePath
-                    << std::endl
-                    << "    "
-                    << entryError.message()
-                    << std::endl;
-
-                return false;
-            }
-
-
-            std::filesystem::create_directories(
-                target,
-                entryError
-            );
-
-
-            if(entryError)
-            {
-                std::cerr
-                    << "Could not create Wine prefix directory:"
-                    << std::endl
-                    << "    "
-                    << target
-                    << std::endl
-                    << "    "
-                    << entryError.message()
-                    << std::endl;
-
-                return false;
-            }
-
-
-            ++iterator;
-
-            continue;
-        }
-
-
-        /*
-            ========================================================
-            REGULAR FILES
-            ========================================================
-        */
-
-
-        entryError.clear();
-
-
-        if(iterator->is_regular_file(
-            entryError
-        ))
-        {
-            if(entryError)
-            {
-                std::cerr
-                    << "Could not inspect Wine prefix file:"
-                    << std::endl
-                    << "    "
-                    << sourcePath
-                    << std::endl
-                    << "    "
-                    << entryError.message()
-                    << std::endl;
-
-                return false;
+                ++iterator;
+                continue;
             }
 
 
@@ -524,7 +1381,8 @@ bool copyBundledPrefixWithoutWindows(
             if(entryError)
             {
                 std::cerr
-                    << "Could not create Wine prefix file parent:"
+                    << "Could not create parent directory for"
+                    << " bundled Wine prefix file:"
                     << std::endl
                     << "    "
                     << target.parent_path()
@@ -548,7 +1406,7 @@ bool copyBundledPrefixWithoutWindows(
             if(entryError)
             {
                 std::cerr
-                    << "Could not copy Wine prefix file:"
+                    << "Could not copy bundled Wine prefix file:"
                     << std::endl
                     << "    "
                     << sourcePath
@@ -567,20 +1425,12 @@ bool copyBundledPrefixWithoutWindows(
 
 
             ++iterator;
-
             continue;
         }
 
 
-        /*
-            ========================================================
-            UNKNOWN ENTRY
-            ========================================================
-        */
-
-
         std::cerr
-            << "Unsupported Wine prefix filesystem entry:"
+            << "Unsupported bundled Wine prefix entry:"
             << std::endl
             << "    "
             << sourcePath
@@ -591,7 +1441,7 @@ bool copyBundledPrefixWithoutWindows(
 
 
     std::cout
-        << "Bundled Wine prefix copied successfully."
+        << "Bundled Wine prefix delta created successfully."
         << std::endl;
 
 
@@ -624,73 +1474,83 @@ bool initializeGlobalPrefix(
     }
 
 
-    ctx.globalPrefixDirectory =
-        home /
-        ".RetroDisc" /
-        "pfx";
+    const std::string runtimeFolder =
+        ctx.runtime.empty()
+            ? std::string("wine")
+            : ctx.runtime;
+
+    const bool useProton =
+        (runtimeFolder == "proton");
 
 
-    std::error_code ec;
+    std::filesystem::path proton;
 
-
-    /*
-        ============================================================
-        EXISTING GLOBAL PREFIX
-        ============================================================
-    */
-
-
-    if(std::filesystem::exists(
-        ctx.globalPrefixDirectory,
-        ec
-    ))
+    if(useProton)
     {
-        if(
-            !std::filesystem::is_directory(
-                ctx.globalPrefixDirectory,
-                ec
-            )
-        )
+        proton =
+            resolveProton(ctx);
+
+        if(proton.empty())
         {
             std::cerr
-                << "Global Wine prefix path is not a directory:"
-                << std::endl
-                << "    "
-                << ctx.globalPrefixDirectory
+                << "Could not find Proton for global base prefix."
                 << std::endl;
 
             return false;
         }
 
+        std::error_code canonicalError;
 
-        std::cout
-            << "Global Wine prefix found:"
-            << std::endl
-            << "    "
-            << ctx.globalPrefixDirectory
-            << std::endl;
+        const auto canonicalProton =
+            std::filesystem::weakly_canonical(
+                proton,
+                canonicalError
+            );
 
-        return true;
+        ctx.resolvedProtonPath =
+            canonicalError
+                ? proton
+                : canonicalProton;
     }
 
 
-    /*
-        ============================================================
-        CREATE GLOBAL PREFIX
-        ============================================================
-    */
+    const std::string versionIdentifier =
+        useProton
+            ? resolveProtonVersionIdentifier(
+                ctx.resolvedProtonPath
+            )
+            : resolveWineVersionIdentifier();
 
 
-    std::filesystem::create_directories(
-        ctx.globalPrefixDirectory,
-        ec
-    );
+    ctx.globalPrefixDirectory =
+        resolveGlobalPrefixDirectory(
+            home,
+            runtimeFolder,
+            versionIdentifier
+        );
 
+
+    const auto compatDataDirectory =
+        ctx.globalPrefixDirectory;
+
+
+    const auto lockPath =
+        compatDataDirectory /
+        ".init.lock";
+
+    std::error_code ec;
+
+
+    const bool globalPrefixExisted =
+        std::filesystem::exists(
+            ctx.globalPrefixDirectory,
+            ec
+        );
 
     if(ec)
     {
         std::cerr
-            << "Could not create global Wine prefix:"
+            << "Could not inspect global base prefix:"
             << std::endl
             << "    "
             << ctx.globalPrefixDirectory
@@ -703,108 +1563,459 @@ bool initializeGlobalPrefix(
     }
 
 
-    /*
-        ============================================================
-        FIND PROTON
-        ============================================================
-    */
+    std::filesystem::create_directories(
+        compatDataDirectory,
+        ec
+    );
 
-
-    const auto proton =
-        resolveProton(ctx);
-
-
-    if(proton.empty())
+    if(ec)
     {
         std::cerr
-            << "Could not find Proton for global Wine prefix."
+            << "Could not create global base prefix directory:"
+            << std::endl
+            << "    "
+            << compatDataDirectory
+            << std::endl
+            << "    "
+            << ec.message()
             << std::endl;
 
         return false;
     }
 
 
-    /*
-        ============================================================
-        STEAM INSTALL PATH
-        ============================================================
-    */
+    InitializationLock lock(
+        lockPath
+    );
+
+    if(!lock.isLocked())
+    {
+        std::cerr
+            << "Could not lock global base prefix initialization:"
+            << std::endl
+            << "    "
+            << lockPath
+            << std::endl;
+
+        return false;
+    }
 
 
-    const auto steamInstallPath =
-        proton
-            .parent_path()
-            .parent_path()
-            .parent_path()
-            .parent_path();
+    if(globalPrefixExisted)
+    {
+        const auto prefixStatus =
+            std::filesystem::symlink_status(
+                ctx.globalPrefixDirectory,
+                ec
+            );
+
+        if(ec)
+        {
+            std::cerr
+                << "Could not inspect global base prefix:"
+                << std::endl
+                << "    "
+                << ctx.globalPrefixDirectory
+                << std::endl
+                << "    "
+                << ec.message()
+                << std::endl;
+
+            return false;
+        }
+
+
+        if(!std::filesystem::is_directory(
+            prefixStatus
+        ))
+        {
+            std::cerr
+                << "Global base prefix path is not a real directory:"
+                << std::endl
+                << "    "
+                << ctx.globalPrefixDirectory
+                << std::endl;
+
+            return false;
+        }
+
+
+        const bool prefixValid =
+            useProton
+                ? prefixLooksValid(
+                    ctx.globalPrefixDirectory
+                )
+                : winePrefixLooksValid(
+                    ctx.globalPrefixDirectory
+                );
+
+
+        if(!prefixValid)
+        {
+            std::cerr
+                << "Global base prefix exists but is incomplete:"
+                << std::endl
+                << "    "
+                << ctx.globalPrefixDirectory
+                << std::endl;
+
+            if(useProton)
+            {
+                std::cerr
+                    << "Required Proton compat-data files:"
+                    << std::endl
+                    << "    "
+                    << compatDataDirectory / "version"
+                    << std::endl
+                    << "    "
+                    << compatDataDirectory / "tracked_files"
+                    << std::endl;
+            }
+            else
+            {
+                std::cerr
+                    << "Required Wine prefix files:"
+                    << std::endl
+                    << "    "
+                    << ctx.globalPrefixDirectory / "pfx" / "drive_c"
+                    << std::endl
+                    << "    "
+                    << ctx.globalPrefixDirectory / "pfx" / "dosdevices"
+                    << std::endl
+                    << "    "
+                    << ctx.globalPrefixDirectory / "pfx" / "system.reg"
+                    << std::endl
+                    << "    "
+                    << ctx.globalPrefixDirectory / "pfx" / "user.reg"
+                    << std::endl;
+            }
+
+            std::cerr
+                << "Refusing to overwrite the existing base prefix."
+                << std::endl;
+
+            return false;
+        }
+
+
+        if(useProton)
+        {
+            const auto versionFile =
+                compatDataDirectory /
+                "version";
+
+            const auto trackedFiles =
+                compatDataDirectory /
+                "tracked_files";
+
+
+            const auto versionStatus =
+                std::filesystem::symlink_status(
+                    versionFile,
+                    ec
+                );
+
+            if(
+                ec ||
+                !std::filesystem::is_regular_file(
+                    versionStatus
+                )
+            )
+            {
+                std::cerr
+                    << "Global Proton compat-data version file is invalid:"
+                    << std::endl
+                    << "    "
+                    << versionFile
+                    << std::endl;
+
+                return false;
+            }
+
+
+            ec.clear();
+
+
+            const auto trackedStatus =
+                std::filesystem::symlink_status(
+                    trackedFiles,
+                    ec
+                );
+
+            if(
+                ec ||
+                !std::filesystem::is_regular_file(
+                    trackedStatus
+                )
+            )
+            {
+                std::cerr
+                    << "Global Proton compat-data tracked_files is invalid:"
+                    << std::endl
+                    << "    "
+                    << trackedFiles
+                    << std::endl;
+
+                return false;
+            }
+        }
+
+
+        std::cout
+            << "Global base prefix found ("
+            << runtimeFolder
+            << " / "
+            << versionIdentifier
+            << "):"
+            << std::endl
+            << "    "
+            << ctx.globalPrefixDirectory
+            << std::endl;
+
+        return true;
+    }
+
+
+    std::filesystem::create_directories(
+        compatDataDirectory,
+        ec
+    );
+
+    if(ec)
+    {
+        std::cerr
+            << "Could not create global base prefix:"
+            << std::endl
+            << "    "
+            << ctx.globalPrefixDirectory
+            << std::endl
+            << "    "
+            << ec.message()
+            << std::endl;
+
+        return false;
+    }
 
 
     std::cout
-        << "Initializing global Wine prefix with Proton:"
+        << "Initializing global base prefix ("
+        << runtimeFolder
+        << " / "
+        << versionIdentifier
+        << "):"
         << std::endl
         << "    "
         << ctx.globalPrefixDirectory
         << std::endl;
 
 
-    std::cout
-        << "Steam install path:"
-        << std::endl
-        << "    "
-        << steamInstallPath
-        << std::endl;
+    if(useProton)
+    {
+        const auto steamInstallPath =
+            findSteamRootForProton(
+                ctx.resolvedProtonPath
+            );
 
 
-    /*
-        ============================================================
-        PROTON WINEBOOT
-        ============================================================
-    */
+        if(steamInstallPath.empty())
+        {
+            std::cerr
+                << "Could not determine Steam root for Proton:"
+                << std::endl
+                << "    "
+                << ctx.resolvedProtonPath
+                << std::endl;
+
+            return false;
+        }
 
 
-    std::ostringstream command;
+        std::cout
+            << "Steam install path:"
+            << std::endl
+            << "    "
+            << steamInstallPath
+            << std::endl;
 
 
-    command
-        << "STEAM_COMPAT_CLIENT_INSTALL_PATH="
-        << shellQuote(
-            steamInstallPath.string()
-        )
-        << " "
-        << "STEAM_COMPAT_DATA_PATH="
-        << shellQuote(
-            ctx.globalPrefixDirectory.parent_path().string()
-        )
-        << " "
-        << "WINEPREFIX="
-        << shellQuote(
-            ctx.globalPrefixDirectory.string()
-        )
-        << " "
-        << shellQuote(
-            proton.string()
-        )
-        << " run "
-        << shellQuote(
-            "wineboot"
-        );
+        std::ostringstream command;
 
 
-    if(!runCommand(
-        command.str(),
-        true
-    ))
+        command
+            << "STEAM_COMPAT_CLIENT_INSTALL_PATH="
+            << shellQuote(
+                steamInstallPath.string()
+            )
+            << " "
+            << "STEAM_COMPAT_DATA_PATH="
+            << shellQuote(
+                compatDataDirectory.string()
+            )
+            << " "
+            << "WINEPREFIX="
+            << shellQuote(
+                (compatDataDirectory / "pfx").string()
+            )
+            << " "
+            << shellQuote(
+                ctx.resolvedProtonPath.string()
+            )
+            << " run "
+            << shellQuote(
+                "wineboot"
+            );
+
+
+        if(!runCommand(
+            command.str(),
+            true
+        ))
+        {
+            std::cerr
+                << "Could not initialize global base prefix."
+                << std::endl;
+
+            return false;
+        }
+    }
+    else
+    {
+        std::ostringstream command;
+
+
+        command
+            << "WINEPREFIX="
+            << shellQuote(
+                (
+                    ctx.globalPrefixDirectory /
+                    "pfx"
+                ).string()
+            )
+            << " wineboot";
+
+
+        if(!runCommand(
+            command.str(),
+            true
+        ))
+        {
+            std::cerr
+                << "Could not initialize global base prefix."
+                << std::endl;
+
+            return false;
+        }
+    }
+
+
+    {
+        const std::filesystem::path winePrefix =
+            ctx.globalPrefixDirectory /
+            "pfx";
+
+
+        const std::string waitCommand =
+            "WINEPREFIX=" +
+            shellQuote(
+                winePrefix.string()
+            ) +
+            " wineserver -w";
+
+
+        if(!runCommand(
+            waitCommand,
+            true
+        ))
+        {
+            std::cerr
+                << "Could not wait for Wine server after prefix initialization."
+                << std::endl;
+
+            return false;
+        }
+    }
+
+
+    const bool prefixValid =
+        useProton
+            ? prefixLooksValid(
+                ctx.globalPrefixDirectory
+            )
+            : winePrefixLooksValid(
+                ctx.globalPrefixDirectory
+            );
+
+
+    if(!prefixValid)
     {
         std::cerr
-            << "Could not initialize global Wine prefix."
+            << "Wineboot completed, but the global base prefix is"
+            << " incomplete:"
+            << std::endl
+            << "    "
+            << ctx.globalPrefixDirectory
             << std::endl;
 
         return false;
     }
 
 
+    if(useProton)
+    {
+        const auto versionFile =
+            compatDataDirectory /
+            "version";
+
+        const auto trackedFiles =
+            compatDataDirectory /
+            "tracked_files";
+
+
+        ec.clear();
+
+
+        if(
+            !std::filesystem::is_regular_file(
+                versionFile,
+                ec
+            )
+        )
+        {
+            std::cerr
+                << "Proton did not create a valid version file:"
+                << std::endl
+                << "    "
+                << versionFile
+                << std::endl;
+
+            return false;
+        }
+
+
+        ec.clear();
+
+
+        if(
+            !std::filesystem::is_regular_file(
+                trackedFiles,
+                ec
+            )
+        )
+        {
+            std::cerr
+                << "Proton did not create a valid tracked_files file:"
+                << std::endl
+                << "    "
+                << trackedFiles
+                << std::endl;
+
+            return false;
+        }
+    }
+
+
     std::cout
-        << "Global Wine prefix initialized successfully:"
+        << "Global base prefix initialized successfully:"
         << std::endl
         << "    "
         << ctx.globalPrefixDirectory
@@ -821,37 +2032,18 @@ bool initializeGlobalPrefix(
     ================================================================
 */
 
-
-bool prepareGamePrefix(
-    Context& ctx
-)
+bool prepareGamePrefix(Context& ctx)
 {
-    /*
-        ============================================================
-        GLOBAL PREFIX
-        ============================================================
-    */
-
-
-    if(!initializeGlobalPrefix(
-        ctx
-    ))
+    if(!initializeGlobalPrefix(ctx))
     {
         return false;
     }
 
 
-    /*
-        ============================================================
-        GAME DIRECTORY
-        ============================================================
-    */
-
-
     if(ctx.gameDirectory.empty())
     {
         std::cerr
-            << "Game directory is not configured."
+            << "Game directory is empty."
             << std::endl;
 
         return false;
@@ -859,11 +2051,20 @@ bool prepareGamePrefix(
 
 
     /*
-        ============================================================
-        PERSISTENT GAME DIRECTORY
-        ============================================================
-    */
+        Persistent game data:
 
+            <datapath>/
+            └── prefix/
+                └── pfx/
+                    └── only persistent changes
+
+        The complete Wine/Proton prefix lives in:
+
+            ~/.RetroDisc/prefix/wine/<version>/pfx
+            ~/.RetroDisc/prefix/proton/<version>/pfx
+
+        and is used as the overlay lower directory.
+    */
 
     const auto persistentGameDirectory =
         ctx.dataPath.empty()
@@ -874,26 +2075,13 @@ bool prepareGamePrefix(
             : ctx.dataPath;
 
 
-    /*
-        ============================================================
-        PREFIX PATHS
-        ============================================================
-    */
-
-
-    ctx.globalPrefixDirectory =
-        getHome() /
-        ".RetroDisc" /
-        "pfx";
-
-
     ctx.prefixLowerDirectory =
         ctx.globalPrefixDirectory;
 
 
     ctx.prefixOverlayDirectory =
         persistentGameDirectory /
-        "pfx";
+        "prefix";
 
 
     ctx.prefixWorkDirectory =
@@ -902,10 +2090,18 @@ bool prepareGamePrefix(
 
 
     /*
-        ============================================================
-        TEMPORARY PREFIX DIRECTORY
-        ============================================================
+        The persistent prefix upper must itself remain
+        a delta. Never copy the complete global prefix
+        into this directory.
     */
+
+    if(!sanitizePersistentPrefixDirectory(
+        ctx.prefixOverlayDirectory,
+        ctx.prefixLowerDirectory
+    ))
+    {  
+        return false;
+    }
 
 
     const auto temporaryPrefixDirectory =
@@ -913,9 +2109,7 @@ bool prepareGamePrefix(
         (
             ctx.gameId +
             "-" +
-            std::to_string(
-                getpid()
-            )
+            std::to_string(getpid())
         );
 
 
@@ -924,11 +2118,9 @@ bool prepareGamePrefix(
         "merged_prefix";
 
 
-    /*
-        ============================================================
-        CREATE TEMPORARY PREFIX DIRECTORY
-        ============================================================
-    */
+    ctx.prefixMergedPfxDirectory =
+        ctx.prefixMergedDirectory /
+        "pfx";
 
 
     std::error_code ec;
@@ -943,7 +2135,7 @@ bool prepareGamePrefix(
     if(ec)
     {
         std::cerr
-            << "Could not create temporary Proton directory:"
+            << "Could not create temporary prefix directory:"
             << std::endl
             << "    "
             << temporaryPrefixDirectory
@@ -957,75 +2149,33 @@ bool prepareGamePrefix(
 
 
     /*
-        ============================================================
-        PROTON pfx LINK
-        ============================================================
+        Check whether the persistent upper already exists.
+
+        IMPORTANT:
+
+        We do NOT create a complete prefix here.
+
+        If it does not exist, we only create the upper
+        directory itself. The complete pfx/ comes from
+        the lower directory through fuse-overlayfs.
     */
 
-
-    const auto protonPrefixLink =
-        temporaryPrefixDirectory /
-        "pfx";
-
-
     ec.clear();
 
-
-    if(
+    const bool persistentPrefixExists =
         std::filesystem::exists(
-            protonPrefixLink,
-            ec
-        ) ||
-        std::filesystem::is_symlink(
-            protonPrefixLink,
-            ec
-        )
-    )
-    {
-        ec.clear();
-
-
-        std::filesystem::remove(
-            protonPrefixLink,
+            ctx.prefixOverlayDirectory,
             ec
         );
-
-
-        if(ec)
-        {
-            std::cerr
-                << "Could not remove old temporary Proton pfx link:"
-                << std::endl
-                << "    "
-                << protonPrefixLink
-                << std::endl
-                << "    "
-                << ec.message()
-                << std::endl;
-
-            return false;
-        }
-    }
-
-
-    ec.clear();
-
-
-    std::filesystem::create_symlink(
-        "merged_prefix",
-        protonPrefixLink,
-        ec
-    );
 
 
     if(ec)
     {
         std::cerr
-            << "Could not create temporary Proton pfx link:"
+            << "Could not inspect persistent prefix upper:"
             << std::endl
             << "    "
-            << protonPrefixLink
-            << " -> merged_prefix"
+            << ctx.prefixOverlayDirectory
             << std::endl
             << "    "
             << ec.message()
@@ -1035,69 +2185,65 @@ bool prepareGamePrefix(
     }
 
 
-    std::cout
-        << "Temporary Proton pfx link created:"
-        << std::endl
-        << "    "
-        << protonPrefixLink
-        << " -> merged_prefix"
-        << std::endl;
+    const bool useWine =
+        ctx.runtime != "proton";
 
 
-    /*
-        ============================================================
-        PROTON COMPATDATA METADATA
-        ============================================================
-
-        Proton expects tracked_files to exist during its first
-        setup_prefix() call.
-
-        Steam normally creates and maintains the CompatData
-        directory before Proton is started. RetroDisc creates its
-        own temporary CompatData directory, therefore we make sure
-        that tracked_files exists as a regular writable file.
-    */
+    if(persistentPrefixExists)
+    {
+        std::cout
+            << "Persistent game prefix upper found:"
+            << std::endl
+            << "    "
+            << ctx.prefixOverlayDirectory
+            << std::endl;
 
 
-    const auto trackedFiles =
-        temporaryPrefixDirectory /
-        "tracked_files";
+        /*
+            Remove files from the persistent upper which
+            are byte-identical to the lower.
 
+            This keeps the game prefix a real delta.
+        */
 
-    /*
-        ------------------------------------------------------------
-        Remove an invalid tracked_files entry.
-        ------------------------------------------------------------
+        if(!compactPersistentPrefix(
+            ctx.prefixOverlayDirectory,
+            ctx.prefixLowerDirectory
+        ))
+        {
+            std::cerr
+                << "Could not compact persistent prefix upper."
+                << std::endl;
 
-        exists() follows symlinks, so check the filesystem entry
-        itself with symlink_status(). Proton needs a normal file.
-    */
+            return false;
+        }
+    }
+    else
+    {
+        /*
+            IMPORTANT:
 
+            Do NOT copy the global prefix here.
 
-    ec.clear();
+            Do NOT call copyCompletePrefix().
 
+            The persistent prefix starts empty and fuse-overlayfs
+            exposes the complete global prefix through lowerdir.
+        */
 
-    const auto trackedFilesStatus =
-        std::filesystem::symlink_status(
-            trackedFiles,
+        std::filesystem::create_directories(
+            ctx.prefixOverlayDirectory,
             ec
         );
 
 
-    if(ec)
-    {
-        /*
-            ENOENT is expected when the file does not exist.
-            Other errors are real failures.
-        */
-
-        if(ec != std::errc::no_such_file_or_directory)
+        if(ec)
         {
             std::cerr
-                << "Could not inspect Proton tracked_files:"
+                << "Could not create persistent prefix upper:"
                 << std::endl
                 << "    "
-                << trackedFiles
+                << ctx.prefixOverlayDirectory
                 << std::endl
                 << "    "
                 << ec.message()
@@ -1106,294 +2252,257 @@ bool prepareGamePrefix(
             return false;
         }
 
-        ec.clear();
-    }
-    else
-    {
-        const bool isRegularFile =
-            std::filesystem::is_regular_file(
-                trackedFilesStatus
-            );
 
-
-        if(!isRegularFile)
+        if(useWine)
         {
-            std::cout
-                << "Removing invalid Proton tracked_files entry:"
-                << std::endl
-                << "    "
-                << trackedFiles
-                << std::endl;
+            /*
+                A bundled Wine prefix is a special case.
+
+                The bundled prefix is a direct Wine prefix:
+
+                    bundled/pfx/
+                        drive_c/
+                        dosdevices/
+                        system.reg
+                        user.reg
+
+                We create only the differences against
+                the global Wine prefix in the persistent
+                upper.
+            */
+
+            const auto executablePath =
+                std::filesystem::path(
+                    ctx.executable
+                );
 
 
-            ec.clear();
+            const auto executableParent =
+                executablePath.parent_path();
 
 
-            std::filesystem::remove_all(
-                trackedFiles,
-                ec
-            );
+            const auto bundledPrefix =
+                executableParent.empty()
+                    ? ctx.root / "pfx"
+                    : ctx.root /
+                      executableParent /
+                      "pfx";
 
 
-            if(ec)
+            std::filesystem::path bundledPrefixToCopy =
+                bundledPrefix;
+
+
+            if(
+                !std::filesystem::is_directory(
+                    bundledPrefixToCopy
+                ) &&
+                bundledPrefixToCopy !=
+                    ctx.root / "pfx" &&
+                std::filesystem::is_directory(
+                    ctx.root / "pfx"
+                )
+            )
             {
-                std::cerr
-                    << "Could not remove invalid Proton tracked_files:"
+                bundledPrefixToCopy =
+                    ctx.root / "pfx";
+            }
+
+
+            if(std::filesystem::is_directory(
+                bundledPrefixToCopy
+            ))
+            {
+                std::cout
+                    << "Bundled game Wine prefix found:"
                     << std::endl
                     << "    "
-                    << trackedFiles
-                    << std::endl
-                    << "    "
-                    << ec.message()
+                    << bundledPrefixToCopy
                     << std::endl;
 
-                return false;
+
+                /*
+                    IMPORTANT:
+
+                    copyBundledPrefix() creates a DELTA
+                    against the global prefix.
+
+                    It must NOT create a complete copy.
+                */
+
+                if(!copyBundledPrefix(
+                    bundledPrefixToCopy,
+                    ctx.prefixOverlayDirectory / "pfx",
+                    ctx.globalPrefixDirectory
+                ))
+                {
+                    std::cerr
+                        << "Could not create bundled Wine prefix delta."
+                        << std::endl;
+
+                    return false;
+                }
+            }
+            else
+            {
+                /*
+                    No bundled prefix.
+
+                    Only create the upper root.
+
+                    We intentionally do NOT create/copy
+                    prefix/pfx here. The lower prefix provides
+                    that through the overlay.
+                */
+
+                std::cout
+                    << "No bundled Wine prefix found."
+                    << std::endl
+                    << "Creating empty persistent Wine prefix upper."
+                    << std::endl;
             }
         }
+        else
+        {
+            std::cout
+                << "Creating empty persistent Proton prefix upper."
+                << std::endl;
+        }
     }
 
 
     /*
-        ------------------------------------------------------------
-        Create tracked_files.
-        ------------------------------------------------------------
+        Wine needs the compatibility symlink inside the
+        persistent upper.
+
+        Do this AFTER compaction so the intentional symlink
+        is not removed by the delta cleanup.
     */
 
+    if(useWine)
+    {
+        const auto persistentPfx =
+            ctx.prefixOverlayDirectory /
+            "pfx";
 
-    ec.clear();
+
+        /*
+            For an empty upper this creates:
+
+                prefix/pfx/drive_c/users/RetroDisc
+
+            without copying the global prefix.
+        */
+
+        if(!ensureWineUserSymlink(
+            persistentPfx
+        ))
+        {
+            return false;
+        }
+    }
 
 
-    if(!std::filesystem::exists(
-        trackedFiles,
-        ec
+    /*
+        Do not copy or clone the global prefix here.
+
+        The only thing that must exist before mounting is:
+
+            <datapath>/prefix/
+
+        plus, where required, actual persistent changes
+        such as bundled-prefix differences or the Wine
+        RetroDisc user symlink.
+    */
+
+    if(!sanitizePersistentPrefixDirectory(
+        ctx.prefixOverlayDirectory,
+        ctx.prefixLowerDirectory
     ))
     {
-        ec.clear();
-
-
-        std::ofstream trackedFile(
-            trackedFiles,
-            std::ios::out |
-            std::ios::trunc
-        );
-
-
-        if(!trackedFile.is_open())
-        {
-            std::cerr
-                << "Could not create Proton tracked_files:"
-                << std::endl
-                << "    "
-                << trackedFiles
-                << std::endl;
-
-            return false;
-        }
-
-
-        trackedFile.flush();
-
-
-        if(!trackedFile.good())
-        {
-            std::cerr
-                << "Could not write Proton tracked_files:"
-                << std::endl
-                << "    "
-                << trackedFiles
-                << std::endl;
-
-            trackedFile.close();
-
-            return false;
-        }
-
-
-        trackedFile.close();
-
-
-        std::cout
-            << "Temporary Proton tracked_files created:"
-            << std::endl
-            << "    "
-            << trackedFiles
-            << std::endl;
+        return false;
     }
 
-
     /*
-        ------------------------------------------------------------
-        Final verification.
-        ------------------------------------------------------------
+        Recreate the complete DIRECTORY STRUCTURE of the lower prefix
+        inside the persistent upper after sanitizing it.
+
+        Only directories are replicated.
+
+        No regular files are copied.
+        No symlinks are copied.
+
+        The lower prefix therefore remains the source for all runtime
+        files, while the persistent upper contains the complete
+        directory structure.
+
+        This is deliberately done AFTER sanitizePersistentPrefixDirectory().
+        The sanitizer can therefore remove pfx/drive_c/windows first,
+        and the directory structure is recreated afterwards.
     */
 
+    std::cout
+        << "Replicating persistent prefix directory structure from lower:"
+        << std::endl
+        << "    Lower: "
+        << ctx.prefixLowerDirectory
+        << std::endl
+        << "    Upper: "
+        << ctx.prefixOverlayDirectory
+        << std::endl;
 
-    ec.clear();
 
-
-    if(
-        !std::filesystem::exists(
-            trackedFiles,
-            ec
-        ) ||
-        !std::filesystem::is_regular_file(
-            trackedFiles,
-            ec
-        )
-    )
+    if(!replicateDirectoryStructure(
+        ctx.prefixLowerDirectory,
+        ctx.prefixOverlayDirectory
+    ))
     {
         std::cerr
-            << "Proton tracked_files is missing or invalid:"
-            << std::endl
-            << "    "
-            << trackedFiles
+            << "Could not replicate persistent prefix directory structure."
             << std::endl;
 
         return false;
     }
 
 
-    /*
-        ============================================================
-        PERSISTENT GAME PREFIX
-        ============================================================
-    */
-
-
-    if(std::filesystem::exists(
-        ctx.prefixOverlayDirectory
-    ))
-    {
-        std::cout
-            << "Persistent game prefix upper found:"
-            << std::endl
-            << "    "
-            << ctx.prefixOverlayDirectory
-            << std::endl;
-    }
-    else
-    {
-        /*
-            ========================================================
-            BUNDLED PREFIX
-            ========================================================
-        */
-
-
-        const auto bundledPrefix =
-            ctx.root /
-            "pfx";
-
-
-        if(std::filesystem::is_directory(
-            bundledPrefix
-        ))
-        {
-            std::cout
-                << "Bundled game Wine prefix found:"
-                << std::endl
-                << "    "
-                << bundledPrefix
-                << std::endl;
-
-
-            if(!copyBundledPrefixWithoutWindows(
-                bundledPrefix,
-                ctx.prefixOverlayDirectory
-            ))
-            {
-                std::cerr
-                    << "Could not copy bundled game Wine prefix:"
-                    << std::endl
-                    << "    "
-                    << bundledPrefix
-                    << std::endl
-                    << "to:"
-                    << std::endl
-                    << "    "
-                    << ctx.prefixOverlayDirectory
-                    << std::endl;
-
-                return false;
-            }
-        }
-        else
-        {
-            /*
-                ====================================================
-                NO BUNDLED PREFIX
-                ====================================================
-            */
-
-
-            std::filesystem::create_directories(
-                ctx.prefixOverlayDirectory,
-                ec
-            );
-
-
-            if(ec)
-            {
-                std::cerr
-                    << "Could not create persistent game prefix upper:"
-                    << std::endl
-                    << "    "
-                    << ctx.prefixOverlayDirectory
-                    << std::endl
-                    << "    "
-                    << ec.message()
-                    << std::endl;
-
-                return false;
-            }
-        }
-    }
-
-
-    /*
-        ============================================================
-        MOUNT PREFIX OVERLAY
-        ============================================================
-    */
-
+    std::cout
+        << "Persistent prefix directory structure replicated successfully."
+        << std::endl;
 
     std::cout
         << "Mounting prefix overlay..."
         << std::endl;
 
 
-    if(!mountPrefixOverlay(
-        ctx
-    ))
+    if(!mountPrefixOverlay(ctx))
     {
-        std::cerr
-            << "Could not mount Wine/Proton prefix overlay."
-            << std::endl;
-
         return false;
     }
 
 
-    /*
-        ============================================================
-        VERIFY MERGED PREFIX
-        ============================================================
-    */
-
-
     if(
-        ctx.prefixMergedDirectory.empty() ||
+        ctx.prefixMergedPfxDirectory.empty() ||
         !std::filesystem::exists(
-            ctx.prefixMergedDirectory
+            ctx.prefixMergedPfxDirectory
         )
     )
     {
         std::cerr
-            << "Wine/Proton merged prefix was not created:"
+            << "Merged prefix directory does not exist:"
             << std::endl
             << "    "
-            << ctx.prefixMergedDirectory
+            << ctx.prefixMergedPfxDirectory
             << std::endl;
+
+
+        unmountPath(
+            ctx.prefixMergedDirectory
+        );
+
+
+        ctx.prefixOverlayMounted =
+            false;
+
 
         return false;
     }
@@ -1403,7 +2512,7 @@ bool prepareGamePrefix(
         << "Wine/Proton merged prefix ready:"
         << std::endl
         << "    "
-        << ctx.prefixMergedDirectory
+        << ctx.prefixMergedPfxDirectory
         << std::endl;
 
 

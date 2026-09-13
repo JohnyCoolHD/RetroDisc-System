@@ -24,6 +24,14 @@ bool prefixLooksValid(
 );
 
 
+bool winePrefixLooksValid(
+    const std::filesystem::path& prefix
+);
+
+bool sanitizePersistentPrefixDirectory(
+    const std::filesystem::path& prefixDirectory
+);
+
 /*
     ================================================================
     COPY

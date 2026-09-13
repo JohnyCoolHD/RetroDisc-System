@@ -179,7 +179,7 @@ A typical persistent directory looks like:
 └── <gameId>/
     ├── config.json
     ├── gamedata/
-    └── pfx/
+    └── prefix/
 ```
 
 Persistent data may contain:

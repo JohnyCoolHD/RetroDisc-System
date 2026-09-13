@@ -12,9 +12,25 @@ bool copyWinePrefix(
     const std::filesystem::path& destination
 )
 {
-    if(!prefixLooksValid(
-        source
-    ))
+    const auto driveC =
+        source / "drive_c";
+
+    const auto dosDevices =
+        source / "dosdevices";
+
+    const auto systemReg =
+        source / "system.reg";
+
+    const auto userReg =
+        source / "user.reg";
+
+
+    if(
+        !directoryExists(driveC) ||
+        !directoryExists(dosDevices) ||
+        !regularFileExists(systemReg) ||
+        !regularFileExists(userReg)
+    )
     {
         std::cerr
             << "Bundled Wine prefix is invalid or incomplete:"
