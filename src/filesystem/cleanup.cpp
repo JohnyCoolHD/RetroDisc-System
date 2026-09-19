@@ -1,5 +1,6 @@
 #include "filesystem_internal.hpp"
 #include "../registry/prefix_sanitize.hpp"
+#include "../registry/prefix/prefix_internal.hpp"
 #include "filesystem.hpp"
 
 #include <chrono>
@@ -137,8 +138,29 @@ bool cleanupFilesystem(Context& ctx)
             ctx.prefixOverlayMounted = false;
 
             /*
-                The persistent upperdir can only be sanitized after
-                the prefix overlay has been unmounted.
+                fuse-overlayfs performs full-file copy-up for metadata
+                operations. The prefix therefore uses a throw-away
+                runtime upper. Only real content changes are promoted
+                into the persistent delta after unmount.
+            */
+
+            if(!prefix_internal::commitPersistentPrefixOverlay(
+                ctx.prefixRuntimeUpperDirectory,
+                ctx.prefixOverlayDirectory,
+                ctx.prefixLowerDirectory
+            ))
+            {
+                std::cerr
+                    << "Failed to commit runtime prefix changes."
+                    << std::endl;
+
+                success = false;
+            }
+
+            /*
+                The persistent upper can only be sanitized after the
+                runtime overlay has been unmounted and its real changes
+                have been committed.
             */
 
             if(!sanitizePersistentPrefixDirectory(

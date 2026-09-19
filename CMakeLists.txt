@@ -239,7 +239,9 @@ file(
 add_executable(
     RetroDisc
 
-    src/main.cpp
+    src/main/main.cpp
+    src/main/parse_command_line.cpp
+    src/main/set_process_name.cpp
 
     src/config/path.cpp
     src/config/create_config.cpp
@@ -247,7 +249,8 @@ add_executable(
     src/config/load.cpp
 
     src/filesystem/prepare.cpp
-    src/filesystem/overlay.cpp
+    src/filesystem/overlay/mount_overlay.cpp
+    src/filesystem/overlay/mount_prefix_overlay.cpp
     src/filesystem/cleanup.cpp
     src/filesystem/mount.cpp
     src/filesystem/directory.cpp
@@ -255,11 +258,67 @@ add_executable(
 
     src/registry/validation.cpp
     src/registry/copy.cpp
-    src/registry/prefix.cpp
-    src/registry/prefix_sanitize.cpp
+    src/registry/prefix/compact_persistent_prefix.cpp
+    src/registry/prefix/commit_persistent_prefix_overlay.cpp
+    src/registry/prefix/copy_bundled_prefix.cpp
+    src/registry/prefix/ensure_wine_user_symlink.cpp
+    src/registry/prefix/files_equal.cpp
+    src/registry/prefix/find_steam_root_for_proton.cpp
+    src/registry/prefix/get_home.cpp
+    src/registry/prefix/get_unix_username.cpp
+    src/registry/prefix/initialize_global_prefix.cpp
+    src/registry/prefix/is_personal_home_symlink.cpp
+    src/registry/prefix/prepare_game_prefix.cpp
+    src/registry/prefix/prepare_prefix.cpp
+    src/registry/prefix/resolve_global_prefix_directory.cpp
+    src/registry/prefix/resolve_proton_version_identifier.cpp
+    src/registry/prefix/resolve_wine_version_identifier.cpp
+    src/registry/prefix/sanitize_identifier.cpp
+    src/registry/prefix_sanitize/files_equal.cpp
+    src/registry/prefix_sanitize/remove_optional_entry.cpp
+    src/registry/prefix_sanitize/remove_redundant_windows_files.cpp
+    src/registry/prefix_sanitize/sanitize_persistent_prefix_directory.cpp
 
-    src/runtime.cpp
-    src/discord.cpp
+    src/runtime/append_user_environment.cpp
+    src/runtime/append_wine_configuration.cpp
+    src/runtime/append_wine_game_launch.cpp
+    src/runtime/append_wine_reg_add.cpp
+    src/runtime/append_wine_reg_delete.cpp
+    src/runtime/append_wine_shell_folder_registry.cpp
+    src/runtime/append_wine_user_directories.cpp
+    src/runtime/build_dll_overrides.cpp
+    src/runtime/build_proton_command.cpp
+    src/runtime/build_wine_command.cpp
+    src/runtime/cleanup_runtime_user.cpp
+    src/runtime/determine_runtime_user.cpp
+    src/runtime/ensure_directory.cpp
+    src/runtime/ensure_legacy_compat_redirect.cpp
+    src/runtime/find_proton.cpp
+    src/runtime/find_steam_root.cpp
+    src/runtime/get_home.cpp
+    src/runtime/launch_game.cpp
+    src/runtime/migrate_and_symlink_legacy_user.cpp
+    src/runtime/prepare_canonical_user_directory.cpp
+    src/runtime/prepare_runtime_user.cpp
+    src/runtime/print_environment.cpp
+    src/runtime/remove_broken_or_invalid_entry.cpp
+    src/runtime/resolve_proton.cpp
+    src/runtime/run_command.cpp
+    src/runtime/shell_quote.cpp
+    src/runtime/valid_environment_name.cpp
+
+    src/discord/clear_activity.cpp
+    src/discord/connect.cpp
+    src/discord/constructor.cpp
+    src/discord/destructor.cpp
+    src/discord/disconnect.cpp
+    src/discord/find_socket.cpp
+    src/discord/get_socket_directories.cpp
+    src/discord/is_connected.cpp
+    src/discord/json_escape.cpp
+    src/discord/receive_packet.cpp
+    src/discord/send_packet.cpp
+    src/discord/set_activity.cpp
 
     "${RETRODISC_GENERATED_RUNTIME_CONFIG_CPP}"
 )

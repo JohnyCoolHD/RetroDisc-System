@@ -157,15 +157,22 @@ struct Context
             its "pfx" subdirectory) as the lowerdir is deliberate: see
             prefixMergedPfxDirectory below.
 
-        Upperdir:
+        Persistent lower:
             <persistent game directory>/prefix
 
             Contains only persistent game-specific changes under
             prefix/pfx/.... Runtime-specific compat-data metadata is
             never persisted here.
 
+        Runtime upper:
+            /tmp/<gameId>-<pid>/prefix_upper
+
+            fuse-overlayfs writes all copy-up activity here. It is
+            discarded after the run; only real content changes are
+            promoted to the persistent lower.
+
         Workdir:
-            <persistent game directory>/.prefix_work
+            /tmp/<gameId>-<pid>/prefix_work
 
         Mountpoint:
             /tmp/<gameId>-<pid>/merged_prefix
@@ -177,6 +184,7 @@ struct Context
     std::filesystem::path globalPrefixDirectory;
     std::filesystem::path prefixLowerDirectory;
     std::filesystem::path prefixOverlayDirectory;
+    std::filesystem::path prefixRuntimeUpperDirectory;
     std::filesystem::path prefixMergedDirectory;
     std::filesystem::path prefixWorkDirectory;
 
@@ -187,7 +195,7 @@ struct Context
 
         This -- not prefixMergedDirectory itself -- is what
         WINEPREFIX is set to, and what every drive_c/... path is
-        built from (see runtime.cpp).
+        built from (see src/runtime/).
 
         For Proton, STEAM_COMPAT_DATA_PATH is set to
         prefixMergedDirectory (the whole merged tree, which also
@@ -230,7 +238,7 @@ struct Context
         simply the whole build directory instead of just its "pfx"
         subdirectory. That makes prefixMergedDirectory itself a
         valid STEAM_COMPAT_DATA_PATH (see buildProtonCommand() in
-        src/runtime.cpp) -- no extra field needed.
+        src/runtime/build_proton_command.cpp) -- no extra field needed.
     */
 
 
