@@ -1,185 +1,11 @@
-#include "filesystem_internal.hpp"
+#include "../filesystem_internal.hpp"
 #include "filesystem.hpp"
+#include "context.hpp"
 
 #include <filesystem>
 #include <iostream>
-
-
-bool mountOverlay(
-    Context& ctx
-)
-{
-    if(ctx.overlayMounted)
-    {
-        return true;
-    }
-
-
-    if(
-        ctx.gameDirectory.empty() ||
-        ctx.gameOverlayUpperDirectory.empty() ||
-        ctx.mergedDirectory.empty() ||
-        ctx.overlayWorkDirectory.empty()
-    )
-    {
-        std::cerr
-            << "Game overlay paths are incomplete."
-            << std::endl;
-
-        return false;
-    }
-
-
-    std::error_code ec;
-
-
-    const auto gameStatus =
-        std::filesystem::symlink_status(
-            ctx.gameDirectory,
-            ec
-        );
-
-
-    if(
-        ec ||
-        !std::filesystem::is_directory(
-            gameStatus
-        )
-    )
-    {
-        std::cerr
-            << "GameData is not a directory:"
-            << std::endl
-            << "    "
-            << ctx.gameDirectory
-            << std::endl;
-
-        return false;
-    }
-
-
-    if(!replicateDirectoryStructure(
-        ctx.gameDirectory,
-        ctx.gameOverlayUpperDirectory
-    ))
-    {
-        return false;
-    }
-
-
-    if(isMounted(
-        ctx.mergedDirectory
-    ))
-    {
-        std::cerr
-            << "Game overlay is already mounted:"
-            << std::endl
-            << "    "
-            << ctx.mergedDirectory
-            << std::endl;
-
-        return false;
-    }
-
-
-    const std::string command =
-        "fuse-overlayfs "
-        "-o lowerdir=" +
-        shellQuote(
-            ctx.gameDirectory.string()
-        ) +
-        " "
-        "-o upperdir=" +
-        shellQuote(
-            ctx.gameOverlayUpperDirectory.string()
-        ) +
-        " "
-        "-o workdir=" +
-        shellQuote(
-            ctx.overlayWorkDirectory.string()
-        ) +
-        " " +
-        shellQuote(
-            ctx.mergedDirectory.string()
-        );
-
-
-    std::cout
-        << "Mounting game overlay..."
-        << std::endl;
-
-
-    if(!runCommand(
-        command
-    ))
-    {
-        std::cerr
-            << "Game overlay mount failed."
-            << std::endl;
-
-        return false;
-    }
-
-
-    ctx.overlayMounted =
-        true;
-
-
-    const auto executable =
-        ctx.mergedDirectory /
-        ctx.executable;
-
-
-    std::error_code executableError;
-
-    const auto executableStatus =
-        std::filesystem::symlink_status(
-            executable,
-            executableError
-        );
-
-
-    if(
-        executableError ||
-        !(
-            std::filesystem::is_regular_file(
-                executableStatus
-            ) ||
-            std::filesystem::is_symlink(
-                executableStatus
-            )
-        )
-    )
-    {
-        std::cerr
-            << "Executable is not visible through game overlay:"
-            << std::endl
-            << "    "
-            << executable
-            << std::endl;
-
-
-        unmountPath(
-            ctx.mergedDirectory
-        );
-
-
-        ctx.overlayMounted =
-            false;
-
-
-        return false;
-    }
-
-
-    std::cout
-        << "Overlay executable: "
-        << executable
-        << std::endl;
-
-
-    return true;
-}
+#include <string>
+#include <system_error>
 
 
 bool mountPrefixOverlay(
@@ -195,6 +21,7 @@ bool mountPrefixOverlay(
     if(
         ctx.prefixLowerDirectory.empty() ||
         ctx.prefixOverlayDirectory.empty() ||
+        ctx.prefixRuntimeUpperDirectory.empty() ||
         ctx.prefixMergedDirectory.empty() ||
         ctx.prefixWorkDirectory.empty()
     )
@@ -240,7 +67,7 @@ bool mountPrefixOverlay(
 
     const auto upperStatus =
         std::filesystem::symlink_status(
-            ctx.prefixOverlayDirectory,
+            ctx.prefixRuntimeUpperDirectory,
             ec
         );
 
@@ -253,10 +80,10 @@ bool mountPrefixOverlay(
     )
     {
         std::cerr
-            << "Prefix upper directory is not valid:"
+            << "Prefix runtime upper directory is not valid:"
             << std::endl
             << "    "
-            << ctx.prefixOverlayDirectory
+            << ctx.prefixRuntimeUpperDirectory
             << std::endl;
 
         return false;
@@ -325,16 +152,23 @@ bool mountPrefixOverlay(
     }
 
 
+    const std::string lowerDirectories =
+        ctx.prefixOverlayDirectory.string() +
+        ":" +
+        ctx.prefixLowerDirectory.string();
+
+
     const std::string command =
+        "FUSE_OVERLAYFS_DISABLE_OVL_WHITEOUT=1 "
         "fuse-overlayfs "
         "-o lowerdir=" +
         shellQuote(
-            ctx.prefixLowerDirectory.string()
+            lowerDirectories
         ) +
         " "
         "-o upperdir=" +
         shellQuote(
-            ctx.prefixOverlayDirectory.string()
+            ctx.prefixRuntimeUpperDirectory.string()
         ) +
         " "
         "-o workdir=" +
@@ -352,17 +186,22 @@ bool mountPrefixOverlay(
         << std::endl;
 
     std::cout
-        << "    Lower:"
+        << "    Base lower:"
         << std::endl
         << "        "
         << ctx.prefixLowerDirectory
         << std::endl;
 
     std::cout
-        << "    Upper:"
+        << "    Persistent lower:"
         << std::endl
         << "        "
         << ctx.prefixOverlayDirectory
+        << std::endl
+        << "    Runtime upper:"
+        << std::endl
+        << "        "
+        << ctx.prefixRuntimeUpperDirectory
         << std::endl;
 
     std::cout
