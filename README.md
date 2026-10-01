@@ -528,28 +528,6 @@ The source code is intentionally kept available so that RetroDisc can be inspect
 
 ---
 
-# Older Releases
-
-Older RetroDisc versions are no longer intended to be distributed as ready-to-use packages.
-
-For older versions, only the **source code** is retained for reference and educational purposes.
-
-This allows users to:
-
-* Study how previous versions were implemented
-* Understand the evolution of RetroDisc
-* Compare different implementations
-* Learn from the source code
-* Build an older version themselves if required
-
-Older versions must therefore be **compiled from source by the user**.
-
-No precompiled binaries or ready-to-use RetroDisc packages are provided for these versions.
-
-See the [RetroDisc-System releases](https://github.com/JohnyCoolHD/RetroDisc-System/releases/) for the available historical source versions.
-
----
-
 # Preservation and Safety
 
 RetroDisc is designed to keep the original game release separate from writable runtime data.
