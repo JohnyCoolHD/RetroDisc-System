@@ -98,11 +98,46 @@ bool prepareGamePrefix(Context& ctx)
         into this directory.
     */
 
-    if(!sanitizePersistentPrefixDirectory(
-        ctx.prefixOverlayDirectory,
-        ctx.prefixLowerDirectory
-    ))
-    {  
+    /*
+        Bundled prefix layout inside a release:
+
+            <root>/
+            └── prefix/
+                └── pfx/
+
+        If <datapath> is the release root itself, the persistent
+        prefix directory IS the bundled prefix directory. In that
+        case it must be used as is: no copy, no sanitize, no compact.
+    */
+
+    const auto bundledPrefixDirectory =
+        ctx.root /
+        "prefix";
+
+
+    std::error_code equivalentError;
+
+    bool bundledIsPersistent =
+        std::filesystem::equivalent(
+            bundledPrefixDirectory,
+            ctx.prefixOverlayDirectory,
+            equivalentError
+        );
+
+    if(equivalentError)
+    {
+        bundledIsPersistent = false;
+    }
+
+
+    if(
+        !bundledIsPersistent &&
+        !sanitizePersistentPrefixDirectory(
+            ctx.prefixOverlayDirectory,
+            ctx.prefixLowerDirectory
+        )
+    )
+    {
         return false;
     }
 
@@ -202,11 +237,41 @@ bool prepareGamePrefix(Context& ctx)
     }
 
 
+    /*
+        An empty persistent prefix (for example left over from an
+        earlier launch without bundled prefix support) counts as
+        not existing, so the bundled prefix can still be copied.
+    */
+
+    bool persistentPrefixUsable =
+        persistentPrefixExists;
+
+    if(persistentPrefixUsable)
+    {
+        std::error_code emptyError;
+
+        if(
+            std::filesystem::is_directory(
+                ctx.prefixOverlayDirectory,
+                emptyError
+            ) &&
+            std::filesystem::is_empty(
+                ctx.prefixOverlayDirectory,
+                emptyError
+            ) &&
+            !emptyError
+        )
+        {
+            persistentPrefixUsable = false;
+        }
+    }
+
+
     const bool useWine =
         ctx.runtime != "proton";
 
 
-    if(persistentPrefixExists)
+    if(persistentPrefixUsable)
     {
         std::cout
             << "Persistent game prefix upper found:"
@@ -223,10 +288,13 @@ bool prepareGamePrefix(Context& ctx)
             This keeps the game prefix a real delta.
         */
 
-        if(!compactPersistentPrefix(
-            ctx.prefixOverlayDirectory,
-            ctx.prefixLowerDirectory
-        ))
+        if(
+            !bundledIsPersistent &&
+            !compactPersistentPrefix(
+                ctx.prefixOverlayDirectory,
+                ctx.prefixLowerDirectory
+            )
+        )
         {
             std::cerr
                 << "Could not compact persistent prefix upper."
@@ -270,119 +338,64 @@ bool prepareGamePrefix(Context& ctx)
         }
 
 
-        if(useWine)
+        /*
+            A bundled prefix (Wine and Proton) lives in:
+
+                <root>/prefix/pfx/
+                    drive_c/
+                    dosdevices/
+                    system.reg
+                    user.reg
+
+            Only the differences against the global prefix are
+            created in the persistent upper.
+        */
+
+        const auto bundledPrefixToCopy =
+            bundledPrefixDirectory /
+            "pfx";
+
+
+        if(std::filesystem::is_directory(
+            bundledPrefixToCopy
+        ))
         {
+            std::cout
+                << "Bundled game prefix found:"
+                << std::endl
+                << "    "
+                << bundledPrefixToCopy
+                << std::endl;
+
+
             /*
-                A bundled Wine prefix is a special case.
+                IMPORTANT:
 
-                The bundled prefix is a direct Wine prefix:
+                copyBundledPrefix() creates a DELTA
+                against the global prefix.
 
-                    bundled/pfx/
-                        drive_c/
-                        dosdevices/
-                        system.reg
-                        user.reg
-
-                We create only the differences against
-                the global Wine prefix in the persistent
-                upper.
+                It must NOT create a complete copy.
             */
 
-            const auto executablePath =
-                std::filesystem::path(
-                    ctx.executable
-                );
-
-
-            const auto executableParent =
-                executablePath.parent_path();
-
-
-            const auto bundledPrefix =
-                executableParent.empty()
-                    ? ctx.root / "pfx"
-                    : ctx.root /
-                      executableParent /
-                      "pfx";
-
-
-            std::filesystem::path bundledPrefixToCopy =
-                bundledPrefix;
-
-
-            if(
-                !std::filesystem::is_directory(
-                    bundledPrefixToCopy
-                ) &&
-                bundledPrefixToCopy !=
-                    ctx.root / "pfx" &&
-                std::filesystem::is_directory(
-                    ctx.root / "pfx"
-                )
-            )
-            {
-                bundledPrefixToCopy =
-                    ctx.root / "pfx";
-            }
-
-
-            if(std::filesystem::is_directory(
-                bundledPrefixToCopy
+            if(!copyBundledPrefix(
+                bundledPrefixToCopy,
+                ctx.prefixOverlayDirectory / "pfx",
+                ctx.globalPrefixDirectory
             ))
             {
-                std::cout
-                    << "Bundled game Wine prefix found:"
-                    << std::endl
-                    << "    "
-                    << bundledPrefixToCopy
+                std::cerr
+                    << "Could not create bundled prefix delta."
                     << std::endl;
 
-
-                /*
-                    IMPORTANT:
-
-                    copyBundledPrefix() creates a DELTA
-                    against the global prefix.
-
-                    It must NOT create a complete copy.
-                */
-
-                if(!copyBundledPrefix(
-                    bundledPrefixToCopy,
-                    ctx.prefixOverlayDirectory / "pfx",
-                    ctx.globalPrefixDirectory
-                ))
-                {
-                    std::cerr
-                        << "Could not create bundled Wine prefix delta."
-                        << std::endl;
-
-                    return false;
-                }
-            }
-            else
-            {
-                /*
-                    No bundled prefix.
-
-                    Only create the upper root.
-
-                    We intentionally do NOT create/copy
-                    prefix/pfx here. The lower prefix provides
-                    that through the overlay.
-                */
-
-                std::cout
-                    << "No bundled Wine prefix found."
-                    << std::endl
-                    << "Creating empty persistent Wine prefix upper."
-                    << std::endl;
+                return false;
             }
         }
         else
         {
             std::cout
-                << "Creating empty persistent Proton prefix upper."
+                << "No bundled prefix found."
+                << std::endl
+                << "Creating empty persistent prefix upper."
                 << std::endl;
         }
     }
@@ -432,10 +445,13 @@ bool prepareGamePrefix(Context& ctx)
         RetroDisc user symlink.
     */
 
-    if(!sanitizePersistentPrefixDirectory(
-        ctx.prefixOverlayDirectory,
-        ctx.prefixLowerDirectory
-    ))
+    if(
+        !bundledIsPersistent &&
+        !sanitizePersistentPrefixDirectory(
+            ctx.prefixOverlayDirectory,
+            ctx.prefixLowerDirectory
+        )
+    )
     {
         return false;
     }
