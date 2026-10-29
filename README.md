@@ -108,7 +108,8 @@ RetroDisc Game/
 ├── manifest.json
 ├── config.json       # optional
 ├── gamedata/
-└── pfx/              # optional
+└── prefix/           # optional
+    └── pfx/
 ```
 
 ## `RetroDisc`
@@ -212,9 +213,9 @@ RetroDisc uses `gamedata/` as the read-only base of the temporary runtime filesy
 
 ---
 
-## `pfx/`
+## `prefix/pfx/`
 
-A RetroDisc release may optionally contain a preconfigured Wine/Proton prefix.
+A RetroDisc release may optionally contain a preconfigured Wine/Proton prefix in `prefix/pfx/`.
 
 If present, it can be used as the initial prefix for the game.
 
