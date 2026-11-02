@@ -273,6 +273,7 @@ add_executable(
     src/registry/prefix/resolve_global_prefix_directory.cpp
     src/registry/prefix/resolve_proton_version_identifier.cpp
     src/registry/prefix/resolve_wine_version_identifier.cpp
+    src/registry/prefix/update_global_proton_prefix.cpp
     src/registry/prefix/sanitize_identifier.cpp
     src/registry/prefix_sanitize/files_equal.cpp
     src/registry/prefix_sanitize/remove_optional_entry.cpp

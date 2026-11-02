@@ -188,7 +188,7 @@ bool prepareFilesystem(
 
 
     ctx.overlayWorkDirectory =
-        std::filesystem::path("/tmp") /
+        persistentGameDirectory /
         (
             "RetroDiscWork_" +
             pid

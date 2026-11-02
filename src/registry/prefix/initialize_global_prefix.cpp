@@ -328,6 +328,15 @@ bool initializeGlobalPrefix(
         }
 
 
+        if(
+            useProton &&
+            !updateGlobalProtonPrefix(ctx)
+        )
+        {
+            return false;
+        }
+
+
         std::cout
             << "Global base prefix found ("
             << runtimeFolder
