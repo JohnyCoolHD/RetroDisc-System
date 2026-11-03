@@ -55,7 +55,7 @@ Game/
 
 ## Requirements
 
-Wine or Proton, `fuse-overlayfs`, `fuse3` and `findmnt` (util-linux).
+Wine or Proton, `fuse-overlayfs`, `fuse3` and `util-linux`.
 
 
 ## License
