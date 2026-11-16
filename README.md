@@ -57,6 +57,16 @@ Game/
 
 Wine or Proton, `fuse-overlayfs`, `fuse3` and `util-linux`.
 
+## Compiling
+
+```bash
+cmake -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_FLAGS="-march=x86-64 -mtune=generic" \
+  -DCMAKE_CXX_FLAGS="-march=x86-64 -mtune=generic"
+cmake --build build --parallel
+```
+This way the executable works on all Versions of x86_64 architechture.
 
 ## License
 
