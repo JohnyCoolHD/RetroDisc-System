@@ -57,16 +57,33 @@ Game/
 
 Wine or Proton, `fuse-overlayfs`, `fuse3` and `util-linux`.
 
-## Compiling
+## Build
+
+Requires: C++20 compiler, CMake, `nlohmann-json`, `fuse-overlayfs`, `findmnt`, `curl`, `tar`, `zstd`, and `readelf`.
+
+### Compiling (x86-64-v1)
+
+To build RetroDisc for the original x86-64 baseline, use the included build script:
 
 ```bash
-cmake -B build \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_C_FLAGS="-march=x86-64 -mtune=generic" \
-  -DCMAKE_CXX_FLAGS="-march=x86-64 -mtune=generic"
-cmake --build build --parallel
+chmod +x build.sh
+./build.sh
 ```
-This way the executable works on all Versions of x86_64 architechture.
+
+The script automatically downloads generic x86-64 runtime packages, prepares an isolated sysroot, configures the compiler and linker, and builds the executable.
+
+This avoids accidentally linking against optimized system libraries on distributions such as CachyOS.
+
+The resulting executable is:
+
+```text
+build-v1/RetroDisc
+```
+
+The script also verifies the executable's ISA requirements using `readelf` and aborts if a higher x86-64 ISA level is detected.
+
+The resulting binary targets x86-64-v1 and is suitable for older x86-64 processors, provided the target system supplies compatible runtime dependencies.
+
 
 ## License
 
